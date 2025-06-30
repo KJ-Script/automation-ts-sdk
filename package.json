@@ -1,0 +1,32 @@
+{
+  "name": "automation-ts-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for automation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test:dom": "ts-node examples/test-dom.ts",
+    "test:actions": "ts-node examples/test-actions.ts",
+    "demo": "ts-node examples/demo-actions.ts",
+    "reddit": "ts-node examples/reddit-signin.ts",
+    "extract": "ts-node examples/data-extraction.ts",
+    "log-json": "ts-node examples/simple-json-logging.ts"
+  },
+  "keywords": ["typescript", "sdk", "automation"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0"
+  },
+  "files": [
+    "dist"
+  ]
+} 
