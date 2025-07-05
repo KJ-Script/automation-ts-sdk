@@ -32,6 +32,10 @@ export interface ScreenshotOptions {
   type?: 'png' | 'jpeg';
 }
 
+export interface ScreenshotFullPageOptions extends ScreenshotOptions {
+  fullPage?: boolean;
+}
+
 export class BrowserActions {
   private page: Page;
 
@@ -68,6 +72,17 @@ export class BrowserActions {
       button: options.button || 'left',
       clickCount: options.clickCount || 1,
       position: options.position
+    });
+  }
+
+  /**
+   * Click on an element by text
+   */
+  async clickByText(text: string, options: ClickOptions = {}): Promise<void> {
+    const element = this.page.getByText(text);
+    await element.click({
+      timeout: options.timeout || 30000,
+      force: options.force || false,
     });
   }
 
@@ -398,5 +413,14 @@ export class BrowserActions {
   async blur(selector: string): Promise<void> {
     const element = this.page.locator(selector);
     await element.blur();
+  }
+
+  async screenshotFullPage(options: ScreenshotOptions = {}): Promise<Buffer> {
+    return await this.page.screenshot({
+      path: options.path,
+      fullPage: true,
+      quality: options.quality,
+      type: options.type || 'png'
+    });
   }
 } 

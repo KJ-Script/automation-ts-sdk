@@ -16,4 +16,18 @@ export {
   ExtractionRule,
   ExtractionOptions,
   ExtractedData
-} from './dom/DataExtractor'; 
+} from './dom/DataExtractor';
+
+// AI Agent exports
+export {
+  AIAgent,
+  Task,
+  AgentConfig,
+  AgentResponse
+} from './ai/AIAgent';
+
+export {
+  ConversationalAgent,
+  ConversationMessage,
+  ConversationContext
+} from './ai/ConversationalAgent'; 
