@@ -162,7 +162,7 @@ export class DataExtractor {
   }
 
   /**
-   * Quick extraction for common web page elements
+   * Quick extraction for common web page elements (optimized for speed)
    */
   async extractCommonData(options: ExtractionOptions = {}): Promise<ExtractedData> {
     const commonRules: ExtractionRule[] = [
@@ -176,7 +176,14 @@ export class DataExtractor {
       { key: 'paragraphs', selector: 'p', multiple: true }
     ];
 
-    return await this.extractData(commonRules, options);
+    // Fast extraction: don't wait for full page loads, just extract what's available
+    const fastOptions = {
+      ...options,
+      waitForElement: false,  // Skip waiting for elements to be ready
+      timeout: 2000          // Aggressive timeout
+    };
+
+    return await this.extractData(commonRules, fastOptions);
   }
 
   /**

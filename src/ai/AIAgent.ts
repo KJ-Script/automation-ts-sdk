@@ -19,7 +19,6 @@ export interface Task {
   completed: boolean;
   result?: any;
   screenshots?: {
-    before?: string;
     after?: string;
   };
 }
@@ -33,6 +32,7 @@ export interface PerformanceConfig {
   actionTimeout?: number;               // Action timeout (default: 10000ms)
   screenshotFrequency?: 'all' | 'key' | 'minimal'; // Screenshot frequency
   domAnalysisFrequency?: 'all' | 'key' | 'minimal'; // DOM analysis frequency
+  skipFullPageLoad?: boolean;           // Skip waiting for full page load, just wait for DOM
 }
 
 export interface AgentConfig {
@@ -86,30 +86,31 @@ export class AIAgent {
       timeout: config.browserConfig?.timeout
     };
 
-    // Set up performance defaults
+    // Set up performance defaults (optimized for speed)
     const performanceDefaults: PerformanceConfig = {
       fastMode: false,
-      clickWaitTime: 1500,
-      typeWaitTime: 500,
-      taskWaitTime: 1000,
-      pageLoadTimeout: 30000,
-      actionTimeout: 10000,
-      screenshotFrequency: 'all',
-      domAnalysisFrequency: 'all'
+      clickWaitTime: 300,        // Reduced from 1500ms to 300ms
+      typeWaitTime: 100,         // Reduced from 500ms to 100ms
+      taskWaitTime: 200,         // Reduced from 1000ms to 200ms
+      pageLoadTimeout: 15000,    // Reduced from 30000ms to 15000ms
+      actionTimeout: 5000,       // Reduced from 10000ms to 5000ms
+      screenshotFrequency: 'key', // Reduced from 'all' to 'key'
+      domAnalysisFrequency: 'key', // Reduced from 'all' to 'key'
+      skipFullPageLoad: true     // Skip expensive full page loads, just wait for DOM
     };
 
     const performance = { ...performanceDefaults, ...config.performance };
 
-    // Apply fast mode overrides
+    // Apply fast mode overrides (ultra-optimized)
     if (performance.fastMode) {
-      performance.clickWaitTime = Math.min(performance.clickWaitTime!, 600);
-      performance.typeWaitTime = Math.min(performance.typeWaitTime!, 200);
-      performance.taskWaitTime = Math.min(performance.taskWaitTime!, 300);
-      performance.pageLoadTimeout = Math.min(performance.pageLoadTimeout!, 15000);
-      performance.actionTimeout = Math.min(performance.actionTimeout!, 5000);
-      // Keep screenshots enabled in fast mode for visual analysis - just reduce frequency
-      performance.screenshotFrequency = performance.screenshotFrequency === 'all' ? 'key' : performance.screenshotFrequency;
-      performance.domAnalysisFrequency = performance.domAnalysisFrequency === 'all' ? 'key' : performance.domAnalysisFrequency;
+      performance.clickWaitTime = Math.min(performance.clickWaitTime!, 150);   // Reduced from 600ms to 150ms
+      performance.typeWaitTime = Math.min(performance.typeWaitTime!, 50);      // Reduced from 200ms to 50ms
+      performance.taskWaitTime = Math.min(performance.taskWaitTime!, 100);     // Reduced from 300ms to 100ms
+      performance.pageLoadTimeout = Math.min(performance.pageLoadTimeout!, 10000); // Reduced from 15000ms to 10000ms
+      performance.actionTimeout = Math.min(performance.actionTimeout!, 3000);  // Reduced from 5000ms to 3000ms
+      // Reduce frequency even more in fast mode
+      performance.screenshotFrequency = 'minimal';
+      performance.domAnalysisFrequency = 'minimal';
     }
 
     this.config = {
@@ -267,18 +268,20 @@ export class AIAgent {
           }
         }
 
-        // Step 3: CRITICAL - Comprehensive DOM analysis after action to feed back to AI
-        if (this.currentPage) {
-          this.log(`🔍 Comprehensive DOM analysis after task completion...`);
-          currentPageContext = await this.analyzeCurrentPageState('after task completion');
+        // Step 3: Smart DOM analysis - only when needed for planning next task
+        if (this.currentPage && this.shouldAnalyzeDom('key_moment')) {
+          this.log(`🔍 Smart DOM analysis for next task planning...`);
+          currentPageContext = await this.analyzeCurrentPageState('task planning');
           this.log(`📄 AI can now see updated page state: ${currentPageContext.title} (${currentPageContext.url})`);
-          this.log(`🧠 Feeding complete DOM context to AI for next decision...`);
           
           // Save screenshots to the task for history
           if (currentPageContext.screenshots && this.taskHistory.length > 0) {
             const lastTask = this.taskHistory[this.taskHistory.length - 1];
             lastTask.screenshots = currentPageContext.screenshots;
           }
+        } else if (this.currentPage && !currentPageContext) {
+          // Get minimal context for planning if we don't have it yet
+          currentPageContext = await this.getPageContext();
         }
 
         // Step 4: Check if goal is achieved based on new page state
@@ -286,8 +289,10 @@ export class AIAgent {
           goalAchieved = await this.isGoalAchieved(instruction, this.taskHistory, currentPageContext);
         }
 
-        // Small delay between tasks (configurable)
-        await new Promise(resolve => setTimeout(resolve, this.config.performance.taskWaitTime!));
+        // Minimal delay between tasks (optimized for speed)
+        if (this.config.performance.taskWaitTime! > 0) {
+          await new Promise(resolve => setTimeout(resolve, this.config.performance.taskWaitTime!));
+        }
       }
 
       // Final analysis
@@ -342,8 +347,8 @@ ${currentPageContext.domSummary}
 TASKS COMPLETED SO FAR:
 ${completedTasks || '- None yet'}
 
-${currentPageContext?.screenshots?.before || currentPageContext?.screenshots?.after ? 
-  `VISUAL CONTEXT: I have provided screenshots of the current page state. 
+${currentPageContext?.screenshots?.after ? 
+  `VISUAL CONTEXT: I have provided a screenshot of the current page state after DOM extraction. 
 
 CRITICAL INSTRUCTION FOR ELEMENT INTERACTION:
 1. First, analyze the SCREENSHOT to visually identify what you want to click/type
@@ -404,9 +409,6 @@ Only return the JSON object, no other text.
       
       // Collect screenshots for multimodal prompt
       const screenshots: string[] = [];
-      if (currentPageContext?.screenshots?.before) {
-        screenshots.push(currentPageContext.screenshots.before);
-      }
       if (currentPageContext?.screenshots?.after) {
         screenshots.push(currentPageContext.screenshots.after);
       }
@@ -477,8 +479,8 @@ ${currentPageContext ? `
 COMPLETED TASKS:
 ${completedTasks.map(t => `✅ ${t.description}`).join('\n')}
 
-${currentPageContext?.screenshots?.before || currentPageContext?.screenshots?.after ? 
-  'VISUAL CONTEXT: I have provided screenshots of the current page state. Please analyze both the DOM structure above AND the visual appearance in the screenshots to evaluate if the goal has been achieved.' : ''}
+${currentPageContext?.screenshots?.after ? 
+  'VISUAL CONTEXT: I have provided a screenshot of the current page state after DOM extraction. Please analyze both the DOM structure above AND the visual appearance in the screenshot to evaluate if the goal has been achieved.' : ''}
 
 Based on the original goal and current page state (both DOM structure and visual appearance), has the goal been achieved?
 
@@ -495,9 +497,6 @@ Only return the JSON object, no other text.
     try {
       // Collect screenshots for multimodal prompt
       const screenshots: string[] = [];
-      if (currentPageContext?.screenshots?.before) {
-        screenshots.push(currentPageContext.screenshots.before);
-      }
       if (currentPageContext?.screenshots?.after) {
         screenshots.push(currentPageContext.screenshots.after);
       }
@@ -540,14 +539,20 @@ Only return the JSON object, no other text.
         
         this.log(`🌐 Navigating to: ${task.url}`);
         await this.currentPage.goto(task.url, { timeout: this.config.performance.pageLoadTimeout });
-        this.log(`⏳ Waiting for page to load...`);
-        await this.actions.waitForLoad(this.config.performance.pageLoadTimeout!);
         
-        // DOM analysis after navigation (always important)
-        if (this.shouldAnalyzeDom('after_navigation')) {
-          this.log(`🔍 DOM Analysis after navigation to ${task.url}`);
-          await this.analyzeCurrentPageState('after navigation');
+        if (this.config.performance.skipFullPageLoad) {
+          // Fast navigation: just wait for DOM, then extract HTML and take screenshot immediately
+          this.log(`⚡ Fast mode: Waiting for DOM content only...`);
+          await this.currentPage.waitForLoadState('domcontentloaded', { timeout: 5000 });
+          this.log(`🚀 DOM ready! Extracting HTML and taking screenshot immediately...`);
+        } else {
+          // Traditional approach: wait for full page load
+          this.log(`⏳ Waiting for full page load...`);
+          await this.actions.waitForLoad(this.config.performance.pageLoadTimeout!);
         }
+        
+        // Skip DOM analysis after navigation - will be done in main loop for better performance
+        // Navigation DOM analysis moved to main execution loop
         
         return { url: task.url, title: await this.currentPage.title() };
 
@@ -561,11 +566,8 @@ Only return the JSON object, no other text.
         this.log(`⏳ Waiting ${this.config.performance.clickWaitTime}ms for potential page changes after click...`);
         await this.actions.wait(this.config.performance.clickWaitTime!);
         
-        // DOM analysis after click (frequency configurable)
-        if (this.shouldAnalyzeDom('after_action')) {
-          this.log(`🔍 DOM Analysis after clicking ${task.selector}`);
-          await this.analyzeCurrentPageState('after click');
-        }
+        // Skip DOM analysis after click - will be done in main loop
+        // DOM analysis moved to main execution loop for better performance
         
         return { clicked: task.selector };
 
@@ -579,11 +581,8 @@ Only return the JSON object, no other text.
         this.log(`⏳ Waiting ${this.config.performance.clickWaitTime}ms for potential page changes after text-based click...`);
         await this.actions.wait(this.config.performance.clickWaitTime!);
         
-        // DOM analysis after text-based click (frequency configurable)
-        if (this.shouldAnalyzeDom('after_action')) {
-          this.log(`🔍 DOM Analysis after clicking by text "${task.clickText}"`);
-          await this.analyzeCurrentPageState('after text click');
-        }
+        // Skip DOM analysis after text click - will be done in main loop
+        // DOM analysis moved to main execution loop for better performance
         
         return { clickedByText: task.clickText };
 
@@ -596,11 +595,8 @@ Only return the JSON object, no other text.
         // Small delay to let any dynamic changes happen
         await this.actions.wait(this.config.performance.typeWaitTime!);
         
-        // DOM analysis after typing (frequency configurable)
-        if (this.shouldAnalyzeDom('after_action')) {
-          this.log(`🔍 DOM Analysis after typing into ${task.selector}`);
-          await this.analyzeCurrentPageState('after typing');
-        }
+        // Skip DOM analysis after typing - will be done in main loop
+        // DOM analysis moved to main execution loop for better performance
         
         return { typed: task.text, into: task.selector };
 
@@ -609,9 +605,8 @@ Only return the JSON object, no other text.
         const extractor = new DataExtractor(this.currentPage);
         const data = await extractor.extractCommonData();
         
-        // Analyze DOM during extraction to see what we're extracting from
-        this.log(`🔍 DOM Analysis during data extraction`);
-        await this.analyzeCurrentPageState('during extraction');
+        // Skip DOM analysis during extraction for performance
+        // Data extraction already provides page context
         
         return data;
 
@@ -624,11 +619,8 @@ Only return the JSON object, no other text.
         this.log(`⏳ Waiting ${waitTime}ms for page changes...`);
         await this.actions.wait(waitTime);
         
-        // DOM analysis after wait (frequency configurable)
-        if (this.shouldAnalyzeDom('after_action')) {
-          this.log(`🔍 DOM Analysis after waiting (checking for changes)`);
-          await this.analyzeCurrentPageState('after wait');
-        }
+        // Skip DOM analysis after wait - will be done in main loop
+        // DOM analysis moved to main execution loop for better performance
         
         return { waited: waitTime };
 
@@ -636,9 +628,8 @@ Only return the JSON object, no other text.
         this.log(`🤖 Executing custom AI-driven action...`);
         const result = await this.handleCustomTask(task);
         
-        // CRITICAL: Always analyze DOM after custom actions
-        this.log(`🔍 DOM Analysis after custom action`);
-        await this.analyzeCurrentPageState('after custom action');
+        // Skip DOM analysis after custom action - will be done in main loop
+        // DOM analysis moved to main execution loop for better performance
         
         return result;
 
@@ -648,26 +639,25 @@ Only return the JSON object, no other text.
   }
 
   /**
-   * Comprehensive DOM analysis with context logging and screenshots
+   * Comprehensive DOM analysis with context logging and screenshots (optimized for speed)
    */
   private async analyzeCurrentPageState(context: string): Promise<any> {
     if (!this.currentPage) return null;
 
-    this.log(`🔍 [${context.toUpperCase()}] Starting DOM analysis with screenshots...`);
+    this.log(`🔍 [${context.toUpperCase()}] Starting fast DOM analysis...`);
     
     const page = await this.getCurrentPage();
     
-    // Take screenshot BEFORE DOM extraction (performance configurable)
-    const beforeScreenshot = this.shouldTakeScreenshot('before_dom') ? 
-      await this.takeScreenshot(`before-${context}`) : null;
-    
-    // Extract complete DOM structure
-    const domTree = await this.domExtractor!.extractFromPage(page);
-    const extractedData = await this.dataExtractor!.extractCommonData();
-    
-    // Take screenshot AFTER DOM extraction (performance configurable)
-    const afterScreenshot = this.shouldTakeScreenshot('after_dom') ? 
-      await this.takeScreenshot(`after-${context}`) : null;
+    // Fast parallel extraction - don't wait for everything to load
+    const [domTree, extractedData, afterScreenshot] = await Promise.all([
+      // Extract DOM immediately (don't wait for images/resources)
+      this.domExtractor!.extractFromPage(page),
+      // Extract data immediately 
+      this.dataExtractor!.extractCommonData(),
+      // Take screenshot immediately after DOM is ready
+      this.shouldTakeScreenshot('after_dom') ? 
+        this.takeScreenshot(`after-${context}`) : null
+    ]);
     
     // Create simplified DOM summary for AI
     const domSummary = this.createDomSummary(domTree);
@@ -680,17 +670,16 @@ Only return the JSON object, no other text.
       domSummary,
       analysisContext: context,
       screenshots: {
-        before: beforeScreenshot,
         after: afterScreenshot
       }
     };
 
-    this.log(`📊 [${context.toUpperCase()}] DOM Analysis Results:`);
+    this.log(`📊 [${context.toUpperCase()}] Fast DOM Analysis Results:`);
     this.log(`   📍 URL: ${pageContext.url}`);
     this.log(`   📝 Title: ${pageContext.title}`);
     this.log(`   🏗️ Elements found: ${domSummary.split('\n').length}`);
-    this.log(`   📸 Screenshots: ${beforeScreenshot ? 'Before ✅' : 'Before ❌'}, ${afterScreenshot ? 'After ✅' : 'After ❌'}`);
-    this.log(`   ✅ DOM state captured for AI decision making`);
+    this.log(`   📸 Screenshot: ${afterScreenshot ? 'Ready ✅' : 'Skipped ❌'}`);
+    this.log(`   ⚡ Fast analysis completed - no waiting for full page load`);
 
     return pageContext;
   }
@@ -777,11 +766,7 @@ What specific action should I take? Respond with a JSON object:
           // Wait for potential changes
           await this.actions!.wait(this.config.performance.clickWaitTime!);
           
-          // DOM analysis after custom click (frequency configurable)
-          if (this.shouldAnalyzeDom('after_action')) {
-            this.log(`🔍 DOM Analysis after custom click action`);
-            await this.analyzeCurrentPageState('after custom click');
-          }
+          // Skip DOM analysis after custom click - will be done in main loop
           
           return { action: 'click', selector: action.selector };
 
@@ -792,11 +777,7 @@ What specific action should I take? Respond with a JSON object:
           // Wait for potential changes
           await this.actions!.wait(this.config.performance.clickWaitTime!);
           
-          // DOM analysis after custom text click (frequency configurable)
-          if (this.shouldAnalyzeDom('after_action')) {
-            this.log(`🔍 DOM Analysis after custom text click action`);
-            await this.analyzeCurrentPageState('after custom text click');
-          }
+          // Skip DOM analysis after custom text click - will be done in main loop
           
           return { action: 'clickByText', clickText: action.clickText };
 
@@ -807,22 +788,23 @@ What specific action should I take? Respond with a JSON object:
           // Wait for potential dynamic changes
           await this.actions!.wait(this.config.performance.typeWaitTime!);
           
-          // DOM analysis after custom typing (frequency configurable)
-          if (this.shouldAnalyzeDom('after_action')) {
-            this.log(`🔍 DOM Analysis after custom type action`);
-            await this.analyzeCurrentPageState('after custom type');
-          }
+          // Skip DOM analysis after custom type - will be done in main loop
           
           return { action: 'type', selector: action.selector, text: action.text };
 
         case 'navigate':
           this.log(`🌐 Custom action: Navigating to ${action.url}`);
           await this.currentPage!.goto(action.url);
-          await this.actions!.waitForLoad();
           
-          // DOM analysis after custom navigation
-          this.log(`🔍 DOM Analysis after custom navigation`);
-          await this.analyzeCurrentPageState('after custom navigation');
+          if (this.config.performance.skipFullPageLoad) {
+            // Fast navigation: just wait for DOM content
+            this.log(`⚡ Fast custom navigation: DOM only...`);
+            await this.currentPage!.waitForLoadState('domcontentloaded', { timeout: 5000 });
+          } else {
+            await this.actions!.waitForLoad();
+          }
+          
+          // Skip DOM analysis after custom navigation - will be done in main loop
           
           return { action: 'navigate', url: action.url };
 
@@ -831,9 +813,7 @@ What specific action should I take? Respond with a JSON object:
           const extractor = new DataExtractor(this.currentPage!);
           const data = await extractor.extractCommonData();
           
-          // DOM analysis during custom extraction
-          this.log(`🔍 DOM Analysis during custom extraction`);
-          await this.analyzeCurrentPageState('during custom extraction');
+          // Skip DOM analysis during custom extraction - data extraction provides context
           
           return data;
 
@@ -950,33 +930,40 @@ What specific action should I take? Respond with a JSON object:
   }
 
   /**
-   * Get page context for AI decision making
+   * Get page context for AI decision making (fast version)
    */
   private async getPageContext(): Promise<any> {
     const page = await this.getCurrentPage();
-    const domTree = await this.domExtractor!.extractFromPage(page);
     
+    // Fast context without full DOM extraction
     return {
       url: await page.url(),
       title: await page.title(),
-      domSummary: this.createDomSummary(domTree)
+      domSummary: 'Fast context mode - DOM analysis skipped for performance'
     };
   }
 
   /**
-   * Get page context with screenshots for AI decision making
+   * Get page context with screenshots for AI decision making (optimized)
    */
   private async getPageContextWithScreenshots(): Promise<any> {
     const page = await this.getCurrentPage();
-    const domTree = await this.domExtractor!.extractFromPage(page);
     
-    // Take a screenshot for immediate analysis
-    const screenshot = await this.takeScreenshot('current-context');
+    // Only extract DOM if we really need it (for screenshots)
+    let domSummary = 'Fast context mode - DOM analysis skipped for performance';
+    if (this.shouldTakeScreenshot('key_moment')) {
+      const domTree = await this.domExtractor!.extractFromPage(page);
+      domSummary = this.createDomSummary(domTree);
+    }
+    
+    // Take a screenshot for immediate analysis (if needed)
+    const screenshot = this.shouldTakeScreenshot('key_moment') ? 
+      await this.takeScreenshot('current-context') : null;
     
     return {
       url: await page.url(),
       title: await page.title(),
-      domSummary: this.createDomSummary(domTree),
+      domSummary,
       screenshots: screenshot ? [screenshot] : []
     };
   }
@@ -1032,9 +1019,11 @@ What specific action should I take? Respond with a JSON object:
       case 'all':
         return true;
       case 'key':
+        // Only analyze after navigation and before planning the next task
         return context === 'after_navigation' || context === 'key_moment';
       case 'minimal':
-        return context === 'key_moment';
+        // Only analyze after navigation - skip most other analysis
+        return context === 'after_navigation' || context === 'key_moment';
       default:
         return true;
     }
@@ -1043,7 +1032,7 @@ What specific action should I take? Respond with a JSON object:
   /**
    * Determine if screenshot should be taken based on performance settings
    */
-  private shouldTakeScreenshot(context: 'before_dom' | 'after_dom' | 'key_moment'): boolean {
+  private shouldTakeScreenshot(context: 'after_dom' | 'key_moment'): boolean {
     if (!this.config.enableScreenshots) return false;
     
     const frequency = this.config.performance.screenshotFrequency!;
@@ -1052,8 +1041,8 @@ What specific action should I take? Respond with a JSON object:
       case 'all':
         return true;
       case 'key':
-        // For 'key' frequency, take screenshots before/after DOM extraction and at key moments
-        return context === 'key_moment' || context === 'before_dom' || context === 'after_dom';
+        // For 'key' frequency, take screenshots after DOM extraction and at key moments
+        return context === 'key_moment' || context === 'after_dom';
       case 'minimal':
         return context === 'key_moment';
       default:

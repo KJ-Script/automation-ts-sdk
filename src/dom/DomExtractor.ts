@@ -17,36 +17,165 @@ export interface DomExtractionOptions {
   excludeTags?: string[];             // Array of HTML tag names to skip during extraction
   includeTextNodes?: boolean;         // Whether to include text nodes as separate nodes
   includeComments?: boolean;          // Whether to include HTML comment nodes
+  usePlaywrightBuiltins?: boolean;    // Whether to use Playwright's built-in DOM methods where possible
 }
 
-// Main class for extracting and processing DOM trees from web pages
+// Enhanced DOM extractor that leverages Playwright's built-in capabilities
 export class DomExtractor {
-  // Private property to store the configuration options with all properties required
   private options: Required<DomExtractionOptions>;
 
-  // Constructor that initializes the extractor with default or custom options
   constructor(options: DomExtractionOptions = {}) {
-    // Set default values and merge with any provided options
     this.options = {
-      includeHidden: false,           // Default: skip hidden elements
-      maxDepth: 50,                   // Default: traverse up to 50 levels deep
-      excludeTags: ['script', 'style'], // Default: skip script and style tags
-      includeTextNodes: true,         // Default: include text nodes
-      includeComments: false,         // Default: skip comment nodes
-      ...options                      // Spread operator merges provided options over defaults
+      includeHidden: false,
+      maxDepth: 50,
+      excludeTags: ['script', 'style'],
+      includeTextNodes: true,
+      includeComments: false,
+      usePlaywrightBuiltins: true,     // Default to using Playwright's built-in methods
+      ...options
     };
   }
 
   /**
-   * Extract the DOM tree from a Playwright page
-   * This method runs JavaScript in the browser context to traverse the DOM
+   * Extract the DOM tree from a Playwright page using enhanced DOM APIs
    */
   async extractFromPage(page: Page): Promise<DomNode> {
-    // Create a simple plain object to avoid serialization issues
+    if (this.options.usePlaywrightBuiltins) {
+      return this.extractUsingPlaywrightMethods(page);
+    } else {
+      return this.extractUsingCustomTraversal(page);
+    }
+  }
+
+  /**
+   * Enhanced extraction using Playwright's built-in DOM methods
+   */
+  private async extractUsingPlaywrightMethods(page: Page): Promise<DomNode> {
     const extractionOptions = {
       includeHidden: this.options.includeHidden,
       maxDepth: this.options.maxDepth,
-      excludeTags: this.options.excludeTags.slice(), // Create a copy of the array
+      excludeTags: this.options.excludeTags.slice(),
+      includeTextNodes: this.options.includeTextNodes,
+      includeComments: this.options.includeComments
+    };
+
+    // Use Playwright's evaluate with more standard DOM APIs
+    const domTree = await page.evaluate((options) => {
+      // Enhanced tree walker using standard DOM APIs
+      function createTreeWalker(root: Element) {
+        return document.createTreeWalker(
+          root,
+          NodeFilter.SHOW_ELEMENT | 
+          (options.includeTextNodes ? NodeFilter.SHOW_TEXT : 0) |
+          (options.includeComments ? NodeFilter.SHOW_COMMENT : 0),
+          {
+            acceptNode(node: Node): number {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                const element = node as Element;
+                
+                // Check excluded tags
+                if (options.excludeTags.includes(element.tagName.toLowerCase())) {
+                  return NodeFilter.FILTER_REJECT;
+                }
+                
+                // Check hidden elements
+                if (!options.includeHidden && element instanceof HTMLElement) {
+                  const style = window.getComputedStyle(element);
+                  if (style.display === 'none' || style.visibility === 'hidden') {
+                    return NodeFilter.FILTER_REJECT;
+                  }
+                }
+              }
+              
+              return NodeFilter.FILTER_ACCEPT;
+            }
+          }
+        );
+      }
+
+      function extractNodeStandard(element: Element, depth: number = 0): any {
+        if (depth > options.maxDepth) {
+          return null;
+        }
+
+        // Extract attributes using standard DOM API
+        const attributes: any = {};
+        if (element.attributes) {
+          Array.from(element.attributes).forEach(attr => {
+            attributes[attr.name] = attr.value;
+          });
+        }
+
+        const children: any[] = [];
+        
+        // Use childNodes for direct traversal
+        Array.from(element.childNodes).forEach(child => {
+          if (child.nodeType === Node.ELEMENT_NODE) {
+            const childElement = child as Element;
+            
+            // Check exclusions
+            if (options.excludeTags.includes(childElement.tagName.toLowerCase())) {
+              return;
+            }
+            
+            // Check hidden elements
+            if (!options.includeHidden && childElement instanceof HTMLElement) {
+              const style = window.getComputedStyle(childElement);
+              if (style.display === 'none' || style.visibility === 'hidden') {
+                return;
+              }
+            }
+            
+            const childNode = extractNodeStandard(childElement, depth + 1);
+            if (childNode) {
+              children.push(childNode);
+            }
+          } else if (child.nodeType === Node.TEXT_NODE && options.includeTextNodes) {
+            const textContent = child.textContent?.trim();
+            if (textContent) {
+              children.push({
+                tagName: '#text',
+                attributes: {},
+                textContent,
+                children: [],
+                depth: depth + 1
+              });
+            }
+          } else if (child.nodeType === Node.COMMENT_NODE && options.includeComments) {
+            children.push({
+              tagName: '#comment',
+              attributes: {},
+              textContent: child.textContent,
+              children: [],
+              depth: depth + 1
+            });
+          }
+        });
+
+        return {
+          tagName: element.tagName.toLowerCase(),
+          attributes,
+          textContent: options.includeTextNodes ? element.textContent?.trim() : undefined,
+          children,
+          depth
+        };
+      }
+
+      // Start from document.documentElement (the <html> element)
+      return extractNodeStandard(document.documentElement);
+    }, extractionOptions);
+
+    return domTree;
+  }
+
+  /**
+   * Original extraction method using custom traversal
+   */
+  private async extractUsingCustomTraversal(page: Page): Promise<DomNode> {
+    const extractionOptions = {
+      includeHidden: this.options.includeHidden,
+      maxDepth: this.options.maxDepth,
+      excludeTags: this.options.excludeTags.slice(),
       includeTextNodes: this.options.includeTextNodes,
       includeComments: this.options.includeComments
     };
@@ -122,70 +251,161 @@ export class DomExtractor {
   }
 
   /**
-   * Extract DOM tree from a specific CSS selector
-   * This method finds an element matching the selector and extracts its subtree
+   * Extract DOM tree from a specific CSS selector using Playwright's built-in selector methods
    */
   async extractFromSelector(page: Page, selector: string): Promise<DomNode | null> {
+    // Use Playwright's built-in selector method
     const element = await page.$(selector);
     if (!element) {
       return null;
     }
 
-    // Create a simple plain object to avoid serialization issues
     const extractionOptions = {
       includeHidden: this.options.includeHidden,
       maxDepth: this.options.maxDepth,
       excludeTags: this.options.excludeTags.slice(),
       includeTextNodes: this.options.includeTextNodes,
-      includeComments: this.options.includeComments
+      includeComments: this.options.includeComments,
+      usePlaywrightBuiltins: this.options.usePlaywrightBuiltins
     };
 
-    const domTree = await element.evaluate((el, options) => {
-      function extractNode(element: any, depth: number = 0): any {
-        if (depth > options.maxDepth) {
-          return null;
-        }
+    if (this.options.usePlaywrightBuiltins) {
+      // Use element.evaluate() for scoped extraction
+      const domTree = await element.evaluate((el, options) => {
+        function extractNodeFromElement(element: Element, depth: number = 0): any {
+          if (depth > options.maxDepth) {
+            return null;
+          }
 
-        const attributes: any = {};
-        for (let i = 0; i < element.attributes.length; i++) {
-          const attr = element.attributes[i];
-          attributes[attr.name] = attr.value;
-        }
+          const attributes: any = {};
+          Array.from(element.attributes).forEach(attr => {
+            attributes[attr.name] = attr.value;
+          });
 
-        const children: any[] = [];
-        for (let i = 0; i < element.childNodes.length; i++) {
-          const child = element.childNodes[i];
-          
-          if (child.nodeType === 1) { // ELEMENT_NODE
-            const childNode = extractNode(child, depth + 1);
-            if (childNode) {
-              children.push(childNode);
+          const children: any[] = [];
+          Array.from(element.childNodes).forEach(child => {
+            if (child.nodeType === Node.ELEMENT_NODE) {
+              const childElement = child as Element;
+              const childNode = extractNodeFromElement(childElement, depth + 1);
+              if (childNode) {
+                children.push(childNode);
+              }
+            } else if (child.nodeType === Node.TEXT_NODE && options.includeTextNodes) {
+              const textContent = child.textContent?.trim();
+              if (textContent) {
+                children.push({
+                  tagName: '#text',
+                  attributes: {},
+                  textContent,
+                  children: [],
+                  depth: depth + 1
+                });
+              }
             }
-          } else if (child.nodeType === 3 && options.includeTextNodes) { // TEXT_NODE
-            const textContent = child.textContent?.trim();
-            if (textContent) {
-              children.push({
-                tagName: '#text',
-                attributes: {},
-                textContent,
-                children: [],
-                depth: depth + 1
-              });
+          });
+
+          return {
+            tagName: element.tagName.toLowerCase(),
+            attributes,
+            textContent: options.includeTextNodes ? element.textContent?.trim() : undefined,
+            children,
+            depth
+          };
+        }
+
+        return extractNodeFromElement(el);
+      }, extractionOptions);
+
+      return domTree;
+    } else {
+      // Fallback to original method
+      const domTree = await element.evaluate((el, options) => {
+        function extractNode(element: any, depth: number = 0): any {
+          if (depth > options.maxDepth) {
+            return null;
+          }
+
+          const attributes: any = {};
+          for (let i = 0; i < element.attributes.length; i++) {
+            const attr = element.attributes[i];
+            attributes[attr.name] = attr.value;
+          }
+
+          const children: any[] = [];
+          for (let i = 0; i < element.childNodes.length; i++) {
+            const child = element.childNodes[i];
+            
+            if (child.nodeType === 1) { // ELEMENT_NODE
+              const childNode = extractNode(child, depth + 1);
+              if (childNode) {
+                children.push(childNode);
+              }
+            } else if (child.nodeType === 3 && options.includeTextNodes) { // TEXT_NODE
+              const textContent = child.textContent?.trim();
+              if (textContent) {
+                children.push({
+                  tagName: '#text',
+                  attributes: {},
+                  textContent,
+                  children: [],
+                  depth: depth + 1
+                });
+              }
             }
           }
+
+          return {
+            tagName: element.tagName.toLowerCase(),
+            attributes,
+            textContent: options.includeTextNodes ? element.textContent?.trim() : undefined,
+            children,
+            depth
+          };
         }
+
+        return extractNode(el);
+      }, extractionOptions);
+
+      return domTree;
+    }
+  }
+
+  /**
+   * Extract using Playwright's HTML content method and parse it
+   */
+  async extractFromHtml(page: Page): Promise<DomNode> {
+    const htmlContent = await page.content();
+    
+    // Parse the HTML content in the browser context to create a tree
+    const domTree = await page.evaluate((html) => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      function extractFromParsedDoc(element: Element, depth: number = 0): any {
+        const attributes: any = {};
+        Array.from(element.attributes).forEach(attr => {
+          attributes[attr.name] = attr.value;
+        });
+
+        const children: any[] = [];
+        Array.from(element.children).forEach(child => {
+          const childNode = extractFromParsedDoc(child, depth + 1);
+          if (childNode) {
+            children.push(childNode);
+          }
+        });
 
         return {
           tagName: element.tagName.toLowerCase(),
           attributes,
-          textContent: options.includeTextNodes ? element.textContent?.trim() : undefined,
+          textContent: element.textContent?.trim(),
           children,
           depth
         };
       }
 
-      return extractNode(el);
-    }, extractionOptions);
+      return extractFromParsedDoc(doc.documentElement);
+    }, htmlContent);
 
     return domTree;
   }
