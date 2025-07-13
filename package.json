@@ -7,26 +7,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist",
-    "test:dom": "npm run build && node dist/examples/test-dom.js",
-    "test:actions": "ts-node examples/test-actions.ts",
-    "demo": "npm run build && node dist/examples/demo-actions.js",
-    "reddit": "npm run build && node dist/examples/reddit-signin.js",
-    "extract": "npm run build && node dist/examples/data-extraction.js",
-    "log-json": "npm run build && node dist/examples/simple-json-logging.js",
-    "ai-basic": "npm run build && node dist/examples/ai-agent-basic.js",
-    "ai-chat": "npm run build && node dist/examples/ai-agent-chat.js",
-    "ai-advanced": "npm run build && node dist/examples/ai-agent-advanced.js",
-    "ai-conversation": "npm run build && node dist/examples/ai-agent-advanced.js conversation",
-    "ai-test": "npm run build && node dist/examples/ai-agent-test.js",
-    "ai-adaptive": "npm run build && node dist/examples/ai-agent-adaptive-demo.js",
-    "ai-screenshot": "npm run build && node dist/examples/ai-agent-screenshot-demo.js",
-    "ai-text-click": "npm run build && node dist/examples/ai-agent-text-click-demo.js",
-    "ai-fast": "npm run build && node dist/examples/ai-agent-fast-demo.js",
-    "ai-screenshot-test": "npm run build && node dist/examples/ai-agent-screenshot-test.js",
-    "twitter": "npm run build && node dist/examples/twitter-example.js",
-    "session-demo": "npm run build && node dist/examples/session-persistence-example.js",
-    "test-session": "npm run build && node dist/examples/test-session-persistence.js"
+    "clean": "rm -rf dist"
   },
   "keywords": [
     "typescript",

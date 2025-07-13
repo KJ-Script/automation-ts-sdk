@@ -1,7 +1,7 @@
 // Main entry point for automation-ts-sdk
 // Export all public APIs from here
 
-export { Browser, BrowserType, BrowserConfig, SessionData } from './browser/Browser';
+export { Browser, BrowserType, BrowserConfig } from './browser/Browser';
 export { 
   BrowserActions, 
   ClickOptions, 

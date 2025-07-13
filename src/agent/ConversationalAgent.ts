@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AIAgent, AgentConfig, Task, AgentResponse } from './AIAgent';
 import { Page } from 'playwright';
-import { PROMPTS, formatPrompt } from '../prompts';
 
 export interface ConversationMessage {
   id: string;
@@ -101,11 +100,25 @@ export class ConversationalAgent extends AIAgent {
   }
 
   private async determineIfActionNeeded(message: string): Promise<boolean> {
-    const prompt = formatPrompt(PROMPTS.DETERMINE_ACTION_NEEDED, {
-      message,
-      currentUrl: this.context.currentUrl || 'No page loaded',
-      pageTitle: this.context.currentPageTitle || 'N/A'
-    });
+    const prompt = `
+You are an AI assistant that can control a browser. Determine if this user message requires browser automation action or if it's just a conversational question.
+
+User message: "${message}"
+
+Current context:
+- Current page: ${this.context.currentUrl || 'No page loaded'}
+- Page title: ${this.context.currentPageTitle || 'N/A'}
+
+Return only "ACTION" if browser automation is needed, or "CONVERSATION" if it's just a question or chat.
+
+Examples:
+- "Go to Google" -> ACTION
+- "Click the login button" -> ACTION  
+- "Extract data from this page" -> ACTION
+- "What did you find on the last page?" -> CONVERSATION
+- "How are you?" -> CONVERSATION
+- "What can you do?" -> CONVERSATION
+`;
 
     try {
       const result = await this.conversationModel.generateContent(prompt);
@@ -119,15 +132,23 @@ export class ConversationalAgent extends AIAgent {
   private async generateConversationalResponse(userMessage: string, agentResponse: AgentResponse): Promise<string> {
     const conversationContext = this.getConversationContext();
     
-    const prompt = formatPrompt(PROMPTS.CONVERSATIONAL_RESPONSE, {
-      userMessage,
-      completedTasks: agentResponse.tasks.filter(t => t.completed).length,
-      totalTasks: agentResponse.tasks.length,
-      taskDescriptions: agentResponse.tasks.map(t => `${t.description} (${t.completed ? 'completed' : 'failed'})`).join(', '),
-      currentUrl: this.context.currentUrl,
-      pageTitle: this.context.currentPageTitle,
-      conversationContext
-    });
+    const prompt = `
+You are a helpful AI assistant that just performed browser automation. Generate a natural, conversational response about what you did.
+
+User asked: "${userMessage}"
+
+What you did:
+- Completed ${agentResponse.tasks.filter(t => t.completed).length}/${agentResponse.tasks.length} tasks
+- Tasks: ${agentResponse.tasks.map(t => `${t.description} (${t.completed ? 'completed' : 'failed'})`).join(', ')}
+- Current page: ${this.context.currentUrl}
+- Page title: ${this.context.currentPageTitle}
+
+Previous conversation:
+${conversationContext}
+
+Generate a friendly, informative response about what you accomplished. Be conversational and helpful.
+Don't just list what you did - explain it naturally like you're talking to a friend.
+`;
 
     try {
       const result = await this.conversationModel.generateContent(prompt);
@@ -140,12 +161,31 @@ export class ConversationalAgent extends AIAgent {
   private async generateContextualResponse(message: string): Promise<string> {
     const conversationContext = this.getConversationContext();
     
-    const prompt = formatPrompt(PROMPTS.CONTEXTUAL_RESPONSE, {
-      message,
-      currentUrl: this.context.currentUrl || 'No page loaded',
-      pageTitle: this.context.currentPageTitle || 'N/A',
-      conversationContext
-    });
+    const prompt = `
+You are a helpful AI assistant that can control browsers and automate web interactions. 
+You're having a conversation with a user.
+
+User message: "${message}"
+
+Current context:
+- Current page: ${this.context.currentUrl || 'No page loaded'}
+- Page title: ${this.context.currentPageTitle || 'N/A'}
+
+Previous conversation:
+${conversationContext}
+
+Your capabilities include:
+- Navigating to websites
+- Clicking buttons and links  
+- Filling out forms
+- Extracting data from pages
+- Taking screenshots
+- Analyzing page content
+
+Respond naturally and helpfully. If they ask what you can do, explain your browser automation capabilities.
+If they ask about the current page, use the context information.
+Be friendly and conversational.
+`;
 
     try {
       const result = await this.conversationModel.generateContent(prompt);
@@ -192,10 +232,14 @@ export class ConversationalAgent extends AIAgent {
       return "No page is currently loaded. Navigate to a website first.";
     }
 
-    const prompt = formatPrompt(PROMPTS.ANALYZE_CURRENT_PAGE, {
-      currentUrl: this.context.currentUrl,
-      pageTitle: this.context.currentPageTitle
-    });
+    const prompt = `
+Analyze this web page and provide insights:
+
+URL: ${this.context.currentUrl}
+Title: ${this.context.currentPageTitle}
+
+Provide a helpful analysis of what's on this page, what actions are possible, and any interesting insights.
+`;
 
     try {
       const result = await this.conversationModel.generateContent(prompt);
@@ -206,10 +250,15 @@ export class ConversationalAgent extends AIAgent {
   }
 
   async getSuggestions(): Promise<string[]> {
-    const prompt = formatPrompt(PROMPTS.GET_SUGGESTIONS, {
-      currentUrl: this.context.currentUrl || 'No page loaded',
-      pageTitle: this.context.currentPageTitle || 'N/A'
-    });
+    const prompt = `
+Based on the current context, suggest 3-5 helpful actions the user could take:
+
+Current page: ${this.context.currentUrl || 'No page loaded'}
+Page title: ${this.context.currentPageTitle || 'N/A'}
+
+Return a JSON array of suggestion strings. Each suggestion should be a natural language instruction.
+Example: ["Click the login button", "Extract data from the table", "Navigate to the homepage"]
+`;
 
     try {
       const result = await this.conversationModel.generateContent(prompt);
