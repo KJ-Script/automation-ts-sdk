@@ -25,7 +25,8 @@
     "ai-fast": "npm run build && node dist/examples/ai-agent-fast-demo.js",
     "ai-screenshot-test": "npm run build && node dist/examples/ai-agent-screenshot-test.js",
     "twitter": "npm run build && node dist/examples/twitter-example.js",
-    "session-demo": "npm run build && node dist/examples/session-persistence-example.js"
+    "session-demo": "npm run build && node dist/examples/session-persistence-example.js",
+    "test-session": "npm run build && node dist/examples/test-session-persistence.js"
   },
   "keywords": [
     "typescript",
