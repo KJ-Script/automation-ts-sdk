@@ -1,8 +1,7 @@
 // Main entry point for automation-ts-sdk
 // Export all public APIs from here
 
-export { AutomationBrowser, BrowserType, BrowserConfig } from './browser/AutomationBrowser';
-export { DomExtractor, DomNode, DomExtractionOptions } from './dom/DomExtractor';
+export { Browser, BrowserType, BrowserConfig, SessionData } from './browser/Browser';
 export { 
   BrowserActions, 
   ClickOptions, 
@@ -11,23 +10,17 @@ export {
   WaitOptions, 
   ScreenshotOptions 
 } from './browser/actions/BrowserActions';
-export {
-  DataExtractor,
-  ExtractionRule,
-  ExtractionOptions,
-  ExtractedData
-} from './dom/DataExtractor';
 
-// AI Agent exports
+// Agent exports
 export {
   AIAgent,
   Task,
   AgentConfig,
   AgentResponse
-} from './ai/AIAgent';
+} from './agent/AIAgent';
 
 export {
   ConversationalAgent,
   ConversationMessage,
   ConversationContext
-} from './ai/ConversationalAgent'; 
+} from './agent/ConversationalAgent';

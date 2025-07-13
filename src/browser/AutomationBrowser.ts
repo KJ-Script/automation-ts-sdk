@@ -1,4 +1,4 @@
-import { Browser, BrowserContext, Page, chromium, firefox, webkit } from 'playwright';
+import { Browser as PlaywrightBrowser, BrowserContext, Page, chromium, firefox, webkit } from 'playwright';
 
 export type BrowserType = 'chrome' | 'firefox' | 'safari';
 
@@ -14,8 +14,8 @@ export interface BrowserConfig {
   slowMo?: number;
 }
 
-export class AutomationBrowser {
-  private browser: Browser | null = null;
+export class Browser {
+  private browser: PlaywrightBrowser | null = null;
   private context: BrowserContext | null = null;
   private config: BrowserConfig;
 
@@ -95,7 +95,7 @@ export class AutomationBrowser {
   /**
    * Get the current browser instance
    */
-  getBrowser(): Browser | null {
+  getBrowser(): PlaywrightBrowser | null {
     return this.browser;
   }
 

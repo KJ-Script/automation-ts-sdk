@@ -25,10 +25,7 @@
     "ai-fast": "npm run build && node dist/examples/ai-agent-fast-demo.js",
     "ai-screenshot-test": "npm run build && node dist/examples/ai-agent-screenshot-test.js",
     "twitter": "npm run build && node dist/examples/twitter-example.js",
-    "dom-comparison": "npm run build && node dist/examples/dom-extractor-comparison.js",
-    "dom-after-screenshot": "npm run build && node dist/examples/dom-after-screenshot-demo.js",
-    "performance-test": "npm run build && node dist/examples/performance-test.js",
-    "fast-html": "npm run build && node dist/examples/fast-html-extraction-demo.js"
+    "session-demo": "npm run build && node dist/examples/session-persistence-example.js"
   },
   "keywords": [
     "typescript",
