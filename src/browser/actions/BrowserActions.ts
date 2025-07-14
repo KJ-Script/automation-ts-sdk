@@ -1,40 +1,20 @@
 import { Page, Locator } from 'playwright';
-
-export interface ClickOptions {
-  timeout?: number;
-  force?: boolean;
-  delay?: number;
-  button?: 'left' | 'right' | 'middle';
-  clickCount?: number;
-  position?: { x: number; y: number };
-}
-
-export interface TypeOptions {
-  delay?: number;
-  timeout?: number;
-  clear?: boolean;
-}
-
-export interface ScrollOptions {
-  behavior?: 'auto' | 'smooth';
-  timeout?: number;
-}
-
-export interface WaitOptions {
-  timeout?: number;
-  state?: 'attached' | 'detached' | 'visible' | 'hidden';
-}
-
-export interface ScreenshotOptions {
-  path?: string;
-  fullPage?: boolean;
-  quality?: number;
-  type?: 'png' | 'jpeg';
-}
-
-export interface ScreenshotFullPageOptions extends ScreenshotOptions {
-  fullPage?: boolean;
-}
+import { 
+  ClickOptions, 
+  TypeOptions, 
+  ScrollOptions, 
+  WaitOptions, 
+  ScreenshotOptions, 
+  ScreenshotFullPageOptions
+} from '../../types/browser-actions';
+import {
+  ClickOptionsSchema,
+  TypeOptionsSchema,
+  ScrollOptionsSchema,
+  WaitOptionsSchema,
+  ScreenshotOptionsSchema,
+  ScreenshotFullPageOptionsSchema
+} from '../../schemas/browser-actions';
 
 export class BrowserActions {
   private page: Page;
@@ -49,14 +29,17 @@ export class BrowserActions {
    * Click on an element by selector
    */
   async click(selector: string, options: ClickOptions = {}): Promise<void> {
+    // Validate options with Zod
+    const validatedOptions = ClickOptionsSchema.parse(options);
+    
     const element = this.page.locator(selector);
     await element.click({
-      timeout: options.timeout || 30000,
-      force: options.force || false,
-      delay: options.delay || 0,
-      button: options.button || 'left',
-      clickCount: options.clickCount || 1,
-      position: options.position
+      timeout: validatedOptions.timeout || 30000,
+      force: validatedOptions.force || false,
+      delay: validatedOptions.delay || 0,
+      button: validatedOptions.button || 'left',
+      clickCount: validatedOptions.clickCount || 1,
+      position: validatedOptions.position
     });
   }
 
@@ -117,16 +100,19 @@ export class BrowserActions {
    * Type text into an element
    */
   async type(selector: string, text: string, options: TypeOptions = {}): Promise<void> {
+    // Validate options with Zod
+    const validatedOptions = TypeOptionsSchema.parse(options);
+    
     const element = this.page.locator(selector);
     
-    if (options.clear) {
+    if (validatedOptions.clear) {
       await element.clear();
     }
     
     await element.fill(text);
     
-    if (options.delay) {
-      await element.type(text, { delay: options.delay });
+    if (validatedOptions.delay) {
+      await element.type(text, { delay: validatedOptions.delay });
     }
   }
 

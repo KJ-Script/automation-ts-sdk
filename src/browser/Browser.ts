@@ -1,18 +1,6 @@
 import { Browser as PlaywrightBrowser, BrowserContext, Page, chromium, firefox, webkit } from 'playwright';
-
-export type BrowserType = 'chrome' | 'firefox' | 'safari';
-
-export interface BrowserConfig {
-  type: BrowserType;
-  headless?: boolean;
-  viewport?: {
-    width: number;
-    height: number;
-  };
-  userAgent?: string;
-  timeout?: number;
-  slowMo?: number;
-}
+import { BrowserType, BrowserConfig } from '../types/browser';
+import { BrowserConfigSchema } from '../schemas/browser';
 
 export class Browser {
   private browser: PlaywrightBrowser | null = null;
@@ -20,12 +8,14 @@ export class Browser {
   private config: BrowserConfig;
 
   constructor(config: BrowserConfig) {
+    // Validate configuration with Zod
+    const validatedConfig = BrowserConfigSchema.parse(config);
+    
     this.config = {
-      headless: false,
       viewport: { width: 1280, height: 720 },
       timeout: 30000,
       slowMo: 1000,
-      ...config
+      ...validatedConfig
     };
   }
 

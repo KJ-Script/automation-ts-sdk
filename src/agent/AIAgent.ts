@@ -1,41 +1,22 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { Browser, BrowserType, BrowserConfig } from '../browser/Browser';
+import { Browser } from '../browser/Browser';
 import { BrowserActions } from '../browser/actions/BrowserActions';
 import { Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PROMPTS, formatPrompt } from '../prompts';
-
-export interface Task {
-  id: string;
-  description: string;
-  type: 'navigate' | 'click' | 'clickByText' | 'type' | 'extract' | 'analyze' | 'wait' | 'custom';
-  selector?: string;
-  text?: string;
-  clickText?: string;
-  url?: string;
-  completed: boolean;
-  result?: any;
-  screenshot?: string;
-}
-
-export interface AgentConfig {
-  apiKey: string;
-  model?: string;
-  browserConfig?: Partial<BrowserConfig>;
-  maxRetries?: number;
-  debugMode?: boolean;
-  screenshotDir?: string;
-  enableScreenshots?: boolean;
-}
-
-export interface AgentResponse {
-  success: boolean;
-  message: string;
-  tasks: Task[];
-  finalResult?: any;
-  screenshots?: string[];
-}
+import { 
+  Task, 
+  AgentConfig, 
+  AgentResponse
+} from '../types/agent';
+import {
+  AITaskResponseSchema,
+  GoalAchievementSchema,
+  CustomActionSchema,
+  AgentConfigSchema
+} from '../schemas/agent';
+import { BrowserConfig } from '../types/browser';
 
 export class AIAgent {
   private genAI: GoogleGenerativeAI;
@@ -57,23 +38,26 @@ export class AIAgent {
   private allScreenshots: string[] = [];
 
   constructor(config: AgentConfig) {
-    this.genAI = new GoogleGenerativeAI(config.apiKey);
+    // Validate configuration with Zod
+    const validatedConfig = AgentConfigSchema.parse(config);
+    
+    this.genAI = new GoogleGenerativeAI(validatedConfig.apiKey);
     const browserConfig: BrowserConfig = {
-      type: config.browserConfig?.type || 'chrome',
-      headless: config.browserConfig?.headless ?? false,
-      viewport: config.browserConfig?.viewport || { width: 1400, height: 900 },
-      userAgent: config.browserConfig?.userAgent,
-      timeout: config.browserConfig?.timeout
+      type: validatedConfig.browserConfig?.type || 'chrome',
+      headless: validatedConfig.browserConfig?.headless ?? false,
+      viewport: validatedConfig.browserConfig?.viewport || { width: 1400, height: 900 },
+      userAgent: validatedConfig.browserConfig?.userAgent,
+      timeout: validatedConfig.browserConfig?.timeout
     };
 
     this.config = {
-      apiKey: config.apiKey,
-      model: config.model || 'gemini-1.5-flash',
+      apiKey: validatedConfig.apiKey,
+      model: validatedConfig.model || 'gemini-1.5-flash',
       browserConfig,
-      maxRetries: config.maxRetries || 3,
-      debugMode: config.debugMode || false,
-      screenshotDir: config.screenshotDir || './screenshots',
-      enableScreenshots: config.enableScreenshots ?? true
+      maxRetries: validatedConfig.maxRetries || 3,
+      debugMode: validatedConfig.debugMode || false,
+      screenshotDir: validatedConfig.screenshotDir || './screenshots',
+      enableScreenshots: validatedConfig.enableScreenshots ?? true
     };
     
     this.model = this.genAI.getGenerativeModel({ model: this.config.model });
@@ -256,19 +240,22 @@ export class AIAgent {
       const response = result.response.text();
       
       const taskJson = response.trim().replace(/```json\n?|\n?```/g, '');
-      const task = JSON.parse(taskJson);
+      const parsedTask = JSON.parse(taskJson);
       
-      this.log(`AI Decision: ${task.reasoning || 'Planning next action'}`);
-      this.log(`Next Action: ${task.description}`);
+      // Validate AI response with Zod
+      const validatedTask = AITaskResponseSchema.parse(parsedTask);
+      
+      this.log(`AI Decision: ${validatedTask.reasoning || 'Planning next action'}`);
+      this.log(`Next Action: ${validatedTask.description}`);
       
       return {
-        id: task.id || `task_${taskHistory.length + 1}`,
-        description: task.description,
-        type: task.type,
-        selector: task.selector,
-        clickText: task.clickText,
-        text: task.text,
-        url: task.url,
+        id: validatedTask.id || `task_${taskHistory.length + 1}`,
+        description: validatedTask.description,
+        type: validatedTask.type,
+        selector: validatedTask.selector,
+        clickText: validatedTask.clickText,
+        text: validatedTask.text,
+        url: validatedTask.url,
         completed: false,
         result: null
       };
@@ -321,7 +308,10 @@ export class AIAgent {
       
       const result = await this.model.generateContent(multimodalPrompt);
       const response = result.response.text();
-      const evaluation = JSON.parse(response.trim().replace(/```json\n?|\n?```/g, ''));
+      const parsedEvaluation = JSON.parse(response.trim().replace(/```json\n?|\n?```/g, ''));
+      
+      // Validate AI response with Zod
+      const evaluation = GoalAchievementSchema.parse(parsedEvaluation);
       
       this.log(`Goal Achievement Check: ${evaluation.achieved ? 'ACHIEVED' : 'NOT YET'} (${evaluation.confidence * 100}% confidence)`);
       this.log(`Reasoning: ${evaluation.reasoning}`);
@@ -447,30 +437,37 @@ export class AIAgent {
       const result = await this.model.generateContent(multimodalPrompt);
       const response = result.response.text();
       const actionJson = response.trim().replace(/```json\n?|\n?```/g, '');
-      const action = JSON.parse(actionJson);
+      const parsedAction = JSON.parse(actionJson);
+      
+      // Validate AI response with Zod
+      const action = CustomActionSchema.parse(parsedAction);
 
       this.log(`AI Decision for custom task: ${action.reasoning}`);
 
       switch (action.action) {
         case 'click':
+          if (!action.selector) throw new Error('Selector required for click action');
           this.log(`Custom action: Clicking ${action.selector}`);
           await this.actions!.click(action.selector);
           
           return { action: 'click', selector: action.selector };
 
         case 'clickByText':
+          if (!action.clickText) throw new Error('Click text required for clickByText action');
           this.log(`Custom action: Clicking by text "${action.clickText}"`);
           await this.actions!.clickByText(action.clickText);
           
           return { action: 'clickByText', clickText: action.clickText };
 
         case 'type':
+          if (!action.selector || !action.text) throw new Error('Selector and text required for type action');
           this.log(`Custom action: Typing "${action.text}" into ${action.selector}`);
           await this.actions!.type(action.selector, action.text, { clear: true });
           
           return { action: 'type', selector: action.selector, text: action.text };
 
         case 'navigate':
+          if (!action.url) throw new Error('URL required for navigate action');
           this.log(`Custom action: Navigating to ${action.url}`);
           await this.currentPage!.goto(action.url);
           await this.actions!.waitForLoad();

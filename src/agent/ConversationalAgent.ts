@@ -1,21 +1,22 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { AIAgent, AgentConfig, Task, AgentResponse } from './AIAgent';
+import { AIAgent } from './AIAgent';
 import { Page } from 'playwright';
-
-export interface ConversationMessage {
-  id: string;
-  timestamp: Date;
-  role: 'user' | 'assistant';
-  content: string;
-  tasks?: Task[];
-  results?: any;
-}
-
-export interface ConversationContext {
-  currentUrl?: string;
-  currentPageTitle?: string;
-  lastScreenshot?: string;
-}
+import { 
+  AgentConfig, 
+  Task, 
+  AgentResponse
+} from '../types/agent';
+import { 
+  ConversationMessage, 
+  ConversationContext
+} from '../types/conversational';
+import {
+  AgentConfigSchema
+} from '../schemas/agent';
+import {
+  ActionDeterminationSchema,
+  SuggestionSchema
+} from '../schemas/conversational';
 
 export class ConversationalAgent extends AIAgent {
   private conversationHistory: ConversationMessage[] = [];
@@ -23,9 +24,11 @@ export class ConversationalAgent extends AIAgent {
   private conversationModel: any;
 
   constructor(config: AgentConfig) {
-    super(config);
-    this.conversationModel = new GoogleGenerativeAI(config.apiKey).getGenerativeModel({ 
-      model: config.model || 'gemini-1.5-flash'
+    // Validate configuration with Zod
+    const validatedConfig = AgentConfigSchema.parse(config);
+    super(validatedConfig);
+    this.conversationModel = new GoogleGenerativeAI(validatedConfig.apiKey).getGenerativeModel({ 
+      model: validatedConfig.model || 'gemini-1.5-flash'
     });
   }
 
@@ -123,8 +126,12 @@ Examples:
     try {
       const result = await this.conversationModel.generateContent(prompt);
       const response = result.response.text().trim().toUpperCase();
-      return response.includes('ACTION');
+      
+      // Validate AI response with Zod
+      const determination = ActionDeterminationSchema.parse(response);
+      return determination === 'ACTION';
     } catch (error) {
+      // If validation fails, default to action needed
       return true;
     }
   }
