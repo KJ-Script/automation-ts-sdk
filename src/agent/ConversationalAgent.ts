@@ -11,11 +11,7 @@ import {
   ConversationContext
 } from '../types/conversational';
 import {
-  AgentConfigSchema
-} from '../schemas/agent';
-import {
-  ActionDeterminationSchema,
-  SuggestionSchema
+  ActionDeterminationSchema
 } from '../schemas/conversational';
 
 export class ConversationalAgent extends AIAgent {
@@ -24,11 +20,9 @@ export class ConversationalAgent extends AIAgent {
   private conversationModel: any;
 
   constructor(config: AgentConfig) {
-    // Validate configuration with Zod
-    const validatedConfig = AgentConfigSchema.parse(config);
-    super(validatedConfig);
-    this.conversationModel = new GoogleGenerativeAI(validatedConfig.apiKey).getGenerativeModel({ 
-      model: validatedConfig.model || 'gemini-1.5-flash'
+    super(config);
+    this.conversationModel = new GoogleGenerativeAI(config.apiKey).getGenerativeModel({ 
+      model: config.model || 'gemini-1.5-flash'
     });
   }
 

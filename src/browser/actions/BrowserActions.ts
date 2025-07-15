@@ -7,14 +7,6 @@ import {
   ScreenshotOptions, 
   ScreenshotFullPageOptions
 } from '../../types/browser-actions';
-import {
-  ClickOptionsSchema,
-  TypeOptionsSchema,
-  ScrollOptionsSchema,
-  WaitOptionsSchema,
-  ScreenshotOptionsSchema,
-  ScreenshotFullPageOptionsSchema
-} from '../../schemas/browser-actions';
 
 export class BrowserActions {
   private page: Page;
@@ -29,17 +21,14 @@ export class BrowserActions {
    * Click on an element by selector
    */
   async click(selector: string, options: ClickOptions = {}): Promise<void> {
-    // Validate options with Zod
-    const validatedOptions = ClickOptionsSchema.parse(options);
-    
     const element = this.page.locator(selector);
     await element.click({
-      timeout: validatedOptions.timeout || 30000,
-      force: validatedOptions.force || false,
-      delay: validatedOptions.delay || 0,
-      button: validatedOptions.button || 'left',
-      clickCount: validatedOptions.clickCount || 1,
-      position: validatedOptions.position
+      timeout: options.timeout || 30000,
+      force: options.force || false,
+      delay: options.delay || 0,
+      button: options.button || 'left',
+      clickCount: options.clickCount || 1,
+      position: options.position
     });
   }
 
@@ -100,19 +89,16 @@ export class BrowserActions {
    * Type text into an element
    */
   async type(selector: string, text: string, options: TypeOptions = {}): Promise<void> {
-    // Validate options with Zod
-    const validatedOptions = TypeOptionsSchema.parse(options);
-    
     const element = this.page.locator(selector);
     
-    if (validatedOptions.clear) {
+    if (options.clear) {
       await element.clear();
     }
     
     await element.fill(text);
     
-    if (validatedOptions.delay) {
-      await element.type(text, { delay: validatedOptions.delay });
+    if (options.delay) {
+      await element.type(text, { delay: options.delay });
     }
   }
 
@@ -407,6 +393,30 @@ export class BrowserActions {
       fullPage: true,
       quality: options.quality,
       type: options.type || 'png'
+    });
+  }
+
+  async createNewTab(): Promise<void> {
+    await this.page.evaluate(() => {
+      window.open('', '_blank');
+    });
+  }
+
+  async closeTab(): Promise<void> {
+    await this.page.evaluate(() => {
+      window.close();
+    });
+  }
+
+  async switchToTab(index: number): Promise<void> {
+    await this.page.evaluate((index) => {
+      window.open('', '_blank');
+    }, index);
+  }
+
+  async getCurrentTab(): Promise<void> {
+    await this.page.evaluate(() => {
+      return window.open('', '_blank');
     });
   }
 } 

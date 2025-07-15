@@ -1,14 +1,8 @@
 // ============ SCHEMAS INDEX ============
-// Re-export all schemas from their respective files
+// Re-export AI response validation schemas only
 
-// Browser schemas
-export * from './browser';
-
-// Browser actions schemas
-export * from './browser-actions';
-
-// Agent schemas
+// Agent AI response schemas
 export * from './agent';
 
-// Conversational schemas
+// Conversational AI response schemas
 export * from './conversational'; 

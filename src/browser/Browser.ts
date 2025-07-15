@@ -1,6 +1,5 @@
 import { Browser as PlaywrightBrowser, BrowserContext, Page, chromium, firefox, webkit } from 'playwright';
 import { BrowserType, BrowserConfig } from '../types/browser';
-import { BrowserConfigSchema } from '../schemas/browser';
 
 export class Browser {
   private browser: PlaywrightBrowser | null = null;
@@ -8,14 +7,11 @@ export class Browser {
   private config: BrowserConfig;
 
   constructor(config: BrowserConfig) {
-    // Validate configuration with Zod
-    const validatedConfig = BrowserConfigSchema.parse(config);
-    
     this.config = {
       viewport: { width: 1280, height: 720 },
       timeout: 30000,
       slowMo: 1000,
-      ...validatedConfig
+      ...config
     };
   }
 

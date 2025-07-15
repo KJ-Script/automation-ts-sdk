@@ -13,8 +13,7 @@ import {
 import {
   AITaskResponseSchema,
   GoalAchievementSchema,
-  CustomActionSchema,
-  AgentConfigSchema
+  CustomActionSchema
 } from '../schemas/agent';
 import { BrowserConfig } from '../types/browser';
 
@@ -38,26 +37,23 @@ export class AIAgent {
   private allScreenshots: string[] = [];
 
   constructor(config: AgentConfig) {
-    // Validate configuration with Zod
-    const validatedConfig = AgentConfigSchema.parse(config);
-    
-    this.genAI = new GoogleGenerativeAI(validatedConfig.apiKey);
+    this.genAI = new GoogleGenerativeAI(config.apiKey);
     const browserConfig: BrowserConfig = {
-      type: validatedConfig.browserConfig?.type || 'chrome',
-      headless: validatedConfig.browserConfig?.headless ?? false,
-      viewport: validatedConfig.browserConfig?.viewport || { width: 1400, height: 900 },
-      userAgent: validatedConfig.browserConfig?.userAgent,
-      timeout: validatedConfig.browserConfig?.timeout
+      type: config.browserConfig?.type || 'chrome',
+      headless: config.browserConfig?.headless ?? false,
+      viewport: config.browserConfig?.viewport || { width: 1400, height: 900 },
+      userAgent: config.browserConfig?.userAgent,
+      timeout: config.browserConfig?.timeout
     };
 
     this.config = {
-      apiKey: validatedConfig.apiKey,
-      model: validatedConfig.model || 'gemini-1.5-flash',
+      apiKey: config.apiKey,
+      model: config.model || 'gemini-1.5-flash',
       browserConfig,
-      maxRetries: validatedConfig.maxRetries || 3,
-      debugMode: validatedConfig.debugMode || false,
-      screenshotDir: validatedConfig.screenshotDir || './screenshots',
-      enableScreenshots: validatedConfig.enableScreenshots ?? true
+      maxRetries: config.maxRetries || 3,
+      debugMode: config.debugMode || false,
+      screenshotDir: config.screenshotDir || './screenshots',
+      enableScreenshots: config.enableScreenshots ?? true
     };
     
     this.model = this.genAI.getGenerativeModel({ model: this.config.model });

@@ -32,31 +32,10 @@ export {
   ConversationContext
 } from './types';
 
-// Zod schemas exports
+// Zod schemas exports (for AI response validation only)
 export {
-  // Browser schemas
-  BrowserTypeSchema,
-  BrowserConfigSchema,
-  
-  // Browser action schemas
-  ClickOptionsSchema,
-  TypeOptionsSchema,
-  ScrollOptionsSchema,
-  WaitOptionsSchema,
-  ScreenshotOptionsSchema,
-  ScreenshotFullPageOptionsSchema,
-  
-  // Agent schemas
-  TaskSchema,
-  AgentConfigSchema,
-  AgentResponseSchema,
   AITaskResponseSchema,
   GoalAchievementSchema,
   CustomActionSchema,
-  
-  // Conversational schemas
-  ConversationMessageSchema,
-  ConversationContextSchema,
-  ActionDeterminationSchema,
-  SuggestionSchema
+  ActionDeterminationSchema
 } from './schemas';
