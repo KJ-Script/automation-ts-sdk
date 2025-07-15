@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // ============ AI RESPONSE SCHEMAS ============
 
-export const TaskTypeSchema = z.enum(['navigate', 'click', 'clickByText', 'type', 'extract', 'analyze', 'wait', 'custom']);
+export const TaskTypeSchema = z.enum(['navigate', 'click', 'clickByText', 'type', 'extract', 'analyze', 'wait', 'screenshot', 'custom']);
 
 export const AITaskResponseSchema = z.object({
   id: z.string().optional(),
@@ -12,6 +12,7 @@ export const AITaskResponseSchema = z.object({
   clickText: z.string().optional(),
   text: z.string().optional(),
   url: z.string().url().optional(),
+  parameters: z.record(z.string(), z.any()).optional(),
   reasoning: z.string().optional()
 });
 

@@ -247,6 +247,13 @@ export class BrowserActions {
   // ============ NAVIGATION ACTIONS ============
 
   /**
+   * Navigate to a URL
+   */
+  async goto(url: string, options: { timeout?: number } = {}): Promise<void> {
+    await this.page.goto(url, { timeout: options.timeout || 30000 });
+  }
+
+  /**
    * Go back in browser history
    */
   async goBack(): Promise<void> {

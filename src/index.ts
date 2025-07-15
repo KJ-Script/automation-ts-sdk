@@ -3,16 +3,22 @@
 
 export { Browser } from './browser/Browser';
 export { BrowserActions } from './browser/actions/BrowserActions';
+export { TabManager } from './browser/TabManager';
 
 // Agent exports
 export { AIAgent } from './agent/AIAgent';
 export { ConversationalAgent } from './agent/ConversationalAgent';
+export { MultiTabAgent } from './agent/MultiTabAgent';
 
 // Types exports
 export {
   // Browser types
   BrowserType,
   BrowserConfig,
+  TabInfo,
+  TabManagerConfig,
+  ParallelTask,
+  ParallelTaskResult,
   
   // Browser action types
   ClickOptions,

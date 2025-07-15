@@ -2,13 +2,34 @@
 // Re-export all types from their respective files
 
 // Browser types
-export * from './browser';
+export {
+  BrowserType,
+  BrowserConfig,
+  TabInfo,
+  TabManagerConfig
+} from './browser';
 
 // Browser actions types
-export * from './browser-actions';
+export {
+  ClickOptions,
+  TypeOptions,
+  ScrollOptions,
+  WaitOptions,
+  ScreenshotOptions,
+  ScreenshotFullPageOptions
+} from './browser-actions';
 
 // Agent types
-export * from './agent';
+export {
+  Task,
+  AgentConfig,
+  AgentResponse,
+  ParallelTask,
+  ParallelTaskResult
+} from './agent';
 
 // Conversational agent types
-export * from './conversational'; 
+export {
+  ConversationMessage,
+  ConversationContext
+} from './conversational'; 
