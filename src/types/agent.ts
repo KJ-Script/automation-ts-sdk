@@ -5,14 +5,17 @@ import { BrowserConfig } from './browser';
 export interface Task {
   id: string;
   description: string;
-  type: 'navigate' | 'click' | 'clickByText' | 'type' | 'extract' | 'analyze' | 'wait' | 'custom';
+  type: 'navigate' | 'click' | 'clickByText' | 'type' | 'extract' | 'analyze' | 'wait' | 'screenshot' | 'custom' | 'createTab' | 'switchTab' | 'closeTab' | 'openInNewTab';
   selector?: string;
   text?: string;
   clickText?: string;
   url?: string;
+  parameters?: Record<string, any>;
+  reasoning?: string;
   completed: boolean;
   result?: any;
   screenshot?: string;
+  tabIndex?: number;
 }
 
 export interface AgentConfig {
@@ -23,6 +26,7 @@ export interface AgentConfig {
   debugMode?: boolean;
   screenshotDir?: string;
   enableScreenshots?: boolean;
+  maxTabs?: number;
 }
 
 export interface AgentResponse {

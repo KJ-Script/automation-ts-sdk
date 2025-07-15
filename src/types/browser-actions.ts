@@ -34,4 +34,18 @@ export interface ScreenshotOptions {
 
 export interface ScreenshotFullPageOptions extends ScreenshotOptions {
   fullPage?: boolean;
+}
+
+// ============ TAB MANAGEMENT TYPES ============
+
+export interface TabInfo {
+  index: number;
+  url: string;
+  title: string;
+  isActive: boolean;
+}
+
+export interface TabManagementOptions {
+  timeout?: number;
+  waitForLoad?: boolean;
 } 

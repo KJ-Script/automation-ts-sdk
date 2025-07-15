@@ -34,6 +34,18 @@ Task types:
 - wait: Wait for elements or time
 - extract: Extract data from page
 - custom: Complex action requiring page analysis
+- createTab: Create a new tab (optionally with URL)
+- switchTab: Switch to a specific tab by index
+- closeTab: Close the current tab
+- openInNewTab: Open a URL in a new tab
+
+IMPORTANT: When choosing elements to interact with, prefer elements that are clearly visible and have descriptive text. Use the interactive elements list to find the best targets.
+
+TAB MANAGEMENT: Use tab operations when you need to:
+- Work on multiple websites simultaneously
+- Keep a reference page open while working on another
+- Open links in new tabs to avoid losing current work
+- Switch between different contexts or workflows
 
 Only return the JSON object, no other text.
 `,

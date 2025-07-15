@@ -21,6 +21,8 @@ export {
   WaitOptions,
   ScreenshotOptions,
   ScreenshotFullPageOptions,
+  TabInfo,
+  TabManagementOptions,
   
   // Agent types
   Task,

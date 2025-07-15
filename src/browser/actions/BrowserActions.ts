@@ -396,27 +396,83 @@ export class BrowserActions {
     });
   }
 
-  async createNewTab(): Promise<void> {
-    await this.page.evaluate(() => {
-      window.open('', '_blank');
-    });
+  // ============ TAB MANAGEMENT ACTIONS ============
+
+  /**
+   * Get the browser context to access tab management
+   */
+  private getContext() {
+    return this.page.context();
   }
 
+  /**
+   * Create a new tab and return its page
+   */
+  async createNewTab(): Promise<Page> {
+    const context = this.getContext();
+    return await context.newPage();
+  }
+
+  /**
+   * Close the current tab
+   */
   async closeTab(): Promise<void> {
-    await this.page.evaluate(() => {
-      window.close();
-    });
+    await this.page.close();
   }
 
+  /**
+   * Get all pages (tabs) in the current context
+   */
+  async getAllTabs(): Promise<Page[]> {
+    const context = this.getContext();
+    return context.pages();
+  }
+
+  /**
+   * Switch to a specific tab by index
+   */
   async switchToTab(index: number): Promise<void> {
-    await this.page.evaluate((index) => {
-      window.open('', '_blank');
-    }, index);
+    const pages = await this.getAllTabs();
+    if (index >= 0 && index < pages.length) {
+      // Update the current page reference
+      (this as any).page = pages[index];
+      await pages[index].bringToFront();
+    } else {
+      throw new Error(`Tab index ${index} is out of range. Available tabs: ${pages.length}`);
+    }
   }
 
-  async getCurrentTab(): Promise<void> {
-    await this.page.evaluate(() => {
-      return window.open('', '_blank');
-    });
+  /**
+   * Switch to a specific tab by page
+   */
+  async switchToPage(page: Page): Promise<void> {
+    await page.bringToFront();
+    // Update the current page reference
+    (this as any).page = page;
+  }
+
+  /**
+   * Get the current tab index
+   */
+  async getCurrentTabIndex(): Promise<number> {
+    const pages = await this.getAllTabs();
+    return pages.findIndex(page => page === this.page);
+  }
+
+  /**
+   * Get tab count
+   */
+  async getTabCount(): Promise<number> {
+    const pages = await this.getAllTabs();
+    return pages.length;
+  }
+
+  /**
+   * Navigate to URL in a new tab
+   */
+  async openInNewTab(url: string): Promise<Page> {
+    const newPage = await this.createNewTab();
+    await newPage.goto(url);
+    return newPage;
   }
 } 

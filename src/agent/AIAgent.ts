@@ -31,10 +31,12 @@ export class AIAgent {
     debugMode: boolean;
     screenshotDir: string;
     enableScreenshots: boolean;
+    maxTabs?: number;
   };
   private taskHistory: Task[] = [];
   private screenshotCounter: number = 0;
   private allScreenshots: string[] = [];
+  private tabHistory: Map<number, { url: string; title: string; createdAt: Date }> = new Map();
 
   constructor(config: AgentConfig) {
     this.genAI = new GoogleGenerativeAI(config.apiKey);
@@ -53,7 +55,8 @@ export class AIAgent {
       maxRetries: config.maxRetries || 3,
       debugMode: config.debugMode || false,
       screenshotDir: config.screenshotDir || './screenshots',
-      enableScreenshots: config.enableScreenshots ?? true
+      enableScreenshots: config.enableScreenshots ?? true,
+      maxTabs: config.maxTabs || 10
     };
     
     this.model = this.genAI.getGenerativeModel({ model: this.config.model });
@@ -387,6 +390,31 @@ export class AIAgent {
         
         return result;
 
+      case 'createTab':
+        this.log(`Creating new tab${task.url ? ` and navigating to ${task.url}` : ''}`);
+        const newTabIndex = await this.createNewTab(task.url);
+        return { tabIndex: newTabIndex, url: task.url };
+
+      case 'switchTab':
+        if (task.tabIndex === undefined) throw new Error('Tab index required for switchTab');
+        this.log(`Switching to tab ${task.tabIndex}`);
+        await this.switchToTab(task.tabIndex);
+        const tabInfo = await this.getTabInfo();
+        const currentTab = tabInfo.find(t => t.index === task.tabIndex);
+        return { switchedToTab: task.tabIndex, url: currentTab?.url, title: currentTab?.title };
+
+      case 'closeTab':
+        this.log(`Closing current tab`);
+        await this.closeCurrentTab();
+        const remainingTabs = await this.getTabInfo();
+        return { closedTab: true, remainingTabs: remainingTabs.length };
+
+      case 'openInNewTab':
+        if (!task.url) throw new Error('URL required for openInNewTab');
+        this.log(`Opening ${task.url} in new tab`);
+        const openedTabIndex = await this.openInNewTab(task.url);
+        return { tabIndex: openedTabIndex, url: task.url };
+
       default:
         throw new Error(`Unknown task type: ${task.type}`);
     }
@@ -513,9 +541,164 @@ export class AIAgent {
     if (!this.currentPage) {
       this.currentPage = await this.browser!.newPage();
       this.actions = new BrowserActions(this.currentPage);
+      // Track the initial tab
+      this.trackTab(0, await this.currentPage.url(), await this.currentPage.title());
     }
 
     return this.currentPage;
+  }
+
+  // ============ TAB MANAGEMENT METHODS ============
+
+  /**
+   * Create a new tab and switch to it
+   */
+  async createNewTab(url?: string): Promise<number> {
+    if (!this.actions) {
+      await this.getCurrentPage();
+    }
+
+    const tabCount = await this.actions!.getTabCount();
+    if (tabCount >= this.config.maxTabs!) {
+      throw new Error(`Maximum number of tabs (${this.config.maxTabs}) reached`);
+    }
+
+    const newPage = await this.actions!.createNewTab();
+    this.currentPage = newPage;
+    this.actions = new BrowserActions(newPage);
+
+    const newTabIndex = await this.actions.getCurrentTabIndex();
+    
+    if (url) {
+      await this.currentPage.goto(url);
+      await this.actions.waitForLoad();
+    }
+
+    this.trackTab(newTabIndex, await this.currentPage.url(), await this.currentPage.title());
+    this.log(`Created new tab ${newTabIndex}${url ? ` and navigated to ${url}` : ''}`);
+    
+    return newTabIndex;
+  }
+
+  /**
+   * Switch to a specific tab by index
+   */
+  async switchToTab(index: number): Promise<void> {
+    if (!this.actions) {
+      await this.getCurrentPage();
+    }
+
+    await this.actions!.switchToTab(index);
+    this.currentPage = (await this.actions!.getAllTabs())[index];
+    this.actions = new BrowserActions(this.currentPage);
+    
+    this.log(`Switched to tab ${index}`);
+  }
+
+  /**
+   * Close the current tab
+   */
+  async closeCurrentTab(): Promise<void> {
+    if (!this.actions) {
+      throw new Error('No active tab to close');
+    }
+
+    const currentIndex = await this.actions.getCurrentTabIndex();
+    const allTabs = await this.actions.getAllTabs();
+    
+    if (allTabs.length <= 1) {
+      throw new Error('Cannot close the last remaining tab');
+    }
+
+    await this.actions.closeTab();
+    
+    // Switch to the next available tab
+    const nextIndex = currentIndex === 0 ? 1 : currentIndex - 1;
+    this.currentPage = allTabs[nextIndex];
+    this.actions = new BrowserActions(this.currentPage);
+    
+    this.tabHistory.delete(currentIndex);
+    this.log(`Closed tab ${currentIndex}, switched to tab ${nextIndex}`);
+  }
+
+  /**
+   * Get information about all tabs
+   */
+  async getTabInfo(): Promise<Array<{ index: number; url: string; title: string; isActive: boolean }>> {
+    if (!this.actions) {
+      await this.getCurrentPage();
+    }
+
+    const allTabs = await this.actions!.getAllTabs();
+    const currentIndex = await this.actions!.getCurrentTabIndex();
+    
+    const tabInfo = await Promise.all(
+      allTabs.map(async (page, index) => {
+        try {
+          return {
+            index,
+            url: page.url(),
+            title: await page.title(),
+            isActive: index === currentIndex
+          };
+        } catch (error) {
+          return {
+            index,
+            url: 'unknown',
+            title: 'unknown',
+            isActive: index === currentIndex
+          };
+        }
+      })
+    );
+
+    return tabInfo;
+  }
+
+  /**
+   * Get the current tab index
+   */
+  async getCurrentTabIndex(): Promise<number> {
+    if (!this.actions) {
+      await this.getCurrentPage();
+    }
+    return await this.actions!.getCurrentTabIndex();
+  }
+
+  /**
+   * Get the total number of tabs
+   */
+  async getTabCount(): Promise<number> {
+    if (!this.actions) {
+      await this.getCurrentPage();
+    }
+    return await this.actions!.getTabCount();
+  }
+
+  /**
+   * Navigate to URL in a new tab
+   */
+  async openInNewTab(url: string): Promise<number> {
+    const newPage = await this.actions!.openInNewTab(url);
+    this.currentPage = newPage;
+    this.actions = new BrowserActions(newPage);
+    
+    const newTabIndex = await this.actions.getCurrentTabIndex();
+    this.trackTab(newTabIndex, url, await this.currentPage.title());
+    
+    this.log(`Opened ${url} in new tab ${newTabIndex}`);
+    return newTabIndex;
+  }
+
+  /**
+   * Track tab information
+   */
+  private trackTab(index: number, url: string, title: string): void {
+    this.tabHistory.set(index, {
+      url,
+      title,
+      createdAt: new Date()
+    });
   }
 
   private async getPageContext(): Promise<any> {
