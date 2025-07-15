@@ -2,6 +2,15 @@
 
 export type BrowserType = 'chrome' | 'firefox' | 'safari';
 
+export interface SessionConfig {
+  enabled: boolean;
+  sessionDir?: string;
+  sessionName?: string;
+  persistCookies?: boolean;
+  persistLocalStorage?: boolean;
+  persistSessionStorage?: boolean;
+}
+
 export interface BrowserConfig {
   type: BrowserType;
   headless?: boolean;
@@ -12,4 +21,5 @@ export interface BrowserConfig {
   userAgent?: string;
   timeout?: number;
   slowMo?: number;
+  session?: SessionConfig;
 } 

@@ -32,6 +32,7 @@ export class AIAgent {
     screenshotDir: string;
     enableScreenshots: boolean;
     maxTabs?: number;
+    sessionName?: string;
   };
   private taskHistory: Task[] = [];
   private screenshotCounter: number = 0;
@@ -45,7 +46,8 @@ export class AIAgent {
       headless: config.browserConfig?.headless ?? false,
       viewport: config.browserConfig?.viewport || { width: 1400, height: 900 },
       userAgent: config.browserConfig?.userAgent,
-      timeout: config.browserConfig?.timeout
+      timeout: config.browserConfig?.timeout,
+      session: config.browserConfig?.session
     };
 
     this.config = {
@@ -56,7 +58,8 @@ export class AIAgent {
       debugMode: config.debugMode || false,
       screenshotDir: config.screenshotDir || './screenshots',
       enableScreenshots: config.enableScreenshots ?? true,
-      maxTabs: config.maxTabs || 10
+      maxTabs: config.maxTabs || 10,
+      sessionName: config.sessionName
     };
     
     this.model = this.genAI.getGenerativeModel({ model: this.config.model });
@@ -525,8 +528,11 @@ export class AIAgent {
 
     this.browser = new Browser(this.config.browserConfig);
     try {
-      await this.browser.launch();
+      await this.browser.launch(this.config.sessionName);
       this.log('Browser launched');
+      if (this.config.sessionName) {
+        this.log(`Using session: ${this.config.sessionName}`);
+      }
     } catch (error) {
       this.log(`Browser launch failed: ${error}`);
       throw error;
@@ -745,6 +751,15 @@ export class AIAgent {
 
   async cleanup(): Promise<void> {
     if (this.browser) {
+      // Save session before closing if session management is enabled
+      if (this.isSessionManagementEnabled() && this.getCurrentSessionName()) {
+        try {
+          await this.saveSession();
+          this.log('Session saved before cleanup');
+        } catch (error) {
+          this.log(`Failed to save session during cleanup: ${error}`);
+        }
+      }
       await this.browser.close();
       this.log('Browser closed');
     }
@@ -752,6 +767,85 @@ export class AIAgent {
 
   getTaskHistory(): Task[] {
     return this.taskHistory;
+  }
+
+  // ============ SESSION MANAGEMENT METHODS ============
+
+  /**
+   * Save the current session
+   */
+  async saveSession(sessionName?: string): Promise<void> {
+    if (!this.browser) {
+      throw new Error('Browser not initialized');
+    }
+    await this.browser.saveSession(sessionName);
+  }
+
+  /**
+   * Load a session
+   */
+  async loadSession(sessionName: string): Promise<boolean> {
+    if (!this.browser) {
+      throw new Error('Browser not initialized');
+    }
+    return await this.browser.loadSession(sessionName);
+  }
+
+  /**
+   * Check if a session exists
+   */
+  sessionExists(sessionName: string): boolean {
+    if (!this.browser) {
+      return false;
+    }
+    return this.browser.sessionExists(sessionName);
+  }
+
+  /**
+   * List all available sessions
+   */
+  listSessions(): string[] {
+    return this.browser ? this.browser.listSessions() : [];
+  }
+
+  /**
+   * Delete a session
+   */
+  deleteSession(sessionName: string): boolean {
+    if (!this.browser) {
+      return false;
+    }
+    return this.browser.deleteSession(sessionName);
+  }
+
+  /**
+   * Get session info
+   */
+  getSessionInfo(sessionName: string) {
+    if (!this.browser) {
+      return null;
+    }
+    return this.browser.getSessionInfo(sessionName);
+  }
+
+  /**
+   * Get current session name
+   */
+  getCurrentSessionName(): string | null {
+    if (!this.browser) {
+      return null;
+    }
+    return this.browser.getCurrentSessionName();
+  }
+
+  /**
+   * Check if session management is enabled
+   */
+  isSessionManagementEnabled(): boolean {
+    if (!this.browser) {
+      return false;
+    }
+    return this.browser.isSessionManagementEnabled();
   }
 
   private log(message: string): void {

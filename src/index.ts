@@ -3,6 +3,7 @@
 
 export { Browser } from './browser/Browser';
 export { BrowserActions } from './browser/actions/BrowserActions';
+export { SessionManager } from './browser/SessionManager';
 
 // Agent exports
 export { AIAgent } from './agent/AIAgent';
@@ -13,6 +14,7 @@ export {
   // Browser types
   BrowserType,
   BrowserConfig,
+  SessionConfig,
   
   // Browser action types
   ClickOptions,
@@ -41,3 +43,6 @@ export {
   CustomActionSchema,
   ActionDeterminationSchema
 } from './schemas';
+
+// Session management types
+export type { SessionData } from './browser/SessionManager';

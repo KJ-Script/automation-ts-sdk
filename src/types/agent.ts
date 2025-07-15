@@ -27,6 +27,7 @@ export interface AgentConfig {
   screenshotDir?: string;
   enableScreenshots?: boolean;
   maxTabs?: number;
+  sessionName?: string;
 }
 
 export interface AgentResponse {
