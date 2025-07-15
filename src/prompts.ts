@@ -7,12 +7,15 @@ ORIGINAL GOAL: "{originalInstruction}"
 CURRENT SITUATION:
 {currentPageContext}
 
+INTERACTIVE ELEMENTS FOUND:
+{interactiveElements}
+
 TASKS COMPLETED SO FAR:
 {completedTasks}
 
 {screenshotContext}
 
-Based on the current page state, what should be the NEXT SINGLE TASK to progress toward the goal?
+Based on the current page state and available interactive elements, what should be the NEXT SINGLE TASK to progress toward the goal?
 
 Respond with a JSON object for ONE task:
 {
@@ -23,7 +26,7 @@ Respond with a JSON object for ONE task:
   "clickText": "exact_text_if_using_clickByText_type",
   "text": "text_to_type_if_needed",
   "url": "url_if_navigate_needed",
-  "reasoning": "Why this task makes sense given the visual context"
+  "reasoning": "Why this task makes sense given the visual context and available elements"
 }
 
 Task types:
@@ -35,6 +38,8 @@ Task types:
 - extract: Extract data from page
 - custom: Complex action requiring page analysis
 
+IMPORTANT: When choosing elements to interact with, prefer elements that are clearly visible and have descriptive text. Use the interactive elements list to find the best targets.
+
 Only return the JSON object, no other text.
 `,
 
@@ -45,6 +50,9 @@ ORIGINAL GOAL: "{originalInstruction}"
 
 CURRENT PAGE STATE:
 {currentPageContext}
+
+INTERACTIVE ELEMENTS FOUND:
+{interactiveElements}
 
 COMPLETED TASKS:
 {completedTasks}
@@ -70,6 +78,9 @@ Task: {taskDescription}
 Current page: {currentUrl}
 Page title: {pageTitle}
 
+INTERACTIVE ELEMENTS FOUND:
+{interactiveElements}
+
 {screenshotContext}
 
 What specific action should I take? Respond with a JSON object:
@@ -81,6 +92,42 @@ What specific action should I take? Respond with a JSON object:
   "url": "url_if_navigate",
   "reasoning": "why_this_action_makes_sense"
 }
+`,
+
+  TASK_FAILURE_RECOVERY: `
+A browser automation task just failed. Here's the situation:
+
+FAILED TASK: {failedTaskDescription}
+ERROR: {errorMessage}
+CURRENT PAGE: {currentUrl}
+PAGE TITLE: {pageTitle}
+
+INTERACTIVE ELEMENTS FOUND:
+{interactiveElements}
+
+{screenshotContext}
+
+Based on the failure and current page state, what should be the NEXT SINGLE TASK to recover and continue toward the goal?
+
+Consider:
+1. The element might be in an iframe - try switching to iframe first
+2. The element might need to be scrolled into view
+3. The element might have a different selector or text
+4. The page might have changed and need re-analysis
+
+Respond with a JSON object for ONE recovery task:
+{
+  "id": "recovery_task_{taskNumber}",
+  "description": "Clear description of recovery action",
+  "type": "navigate|click|clickByText|type|wait|extract|custom",
+  "selector": "valid_css_selector_if_using_click_type",
+  "clickText": "exact_text_if_using_clickByText_type",
+  "text": "text_to_type_if_needed",
+  "url": "url_if_navigate_needed",
+  "reasoning": "Why this recovery action makes sense given the failure"
+}
+
+Only return the JSON object, no other text.
 `,
 
   DETERMINE_ACTION_NEEDED: `
@@ -153,6 +200,9 @@ Analyze this web page and provide insights:
 URL: {currentUrl}
 Title: {pageTitle}
 
+INTERACTIVE ELEMENTS FOUND:
+{interactiveElements}
+
 Provide a helpful analysis of what's on this page, what actions are possible, and any interesting insights.
 `,
 
@@ -161,6 +211,9 @@ Based on the current context, suggest 3-5 helpful actions the user could take:
 
 Current page: {currentUrl}
 Page title: {pageTitle}
+
+INTERACTIVE ELEMENTS FOUND:
+{interactiveElements}
 
 Return a JSON array of suggestion strings. Each suggestion should be a natural language instruction.
 Example: ["Click the login button", "Extract data from the table", "Navigate to the homepage"]
@@ -198,16 +251,7 @@ Choose the BEST interaction method:
 OPTION A - Click by Text (PREFERRED for buttons/links with visible text):
 - Use action: "clickByText"
 - Set clickText: "exact text visible on the element"
-
-OPTION B - Click by CSS Selector:
-- Use action: "click"
-- Generate a VALID CSS SELECTOR based on common web patterns
-
-Examples:
-- {"action": "clickByText", "clickText": "Next"}
-- {"action": "clickByText", "clickText": "Sign In"}
-- {"action": "click", "selector": "button#submit-btn"}
-- {"action": "click", "selector": "input[type=\"email\"]"}`
+`,
 };
 
 export function formatPrompt(template: string, variables: Record<string, any>): string {
