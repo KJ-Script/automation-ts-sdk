@@ -475,4 +475,442 @@ export class BrowserActions {
     await newPage.goto(url);
     return newPage;
   }
+
+  // ============ DOM EXTRACTION AND TRACKING ============
+
+  /**
+   * Get the complete HTML content of the page
+   */
+  async getPageHTML(): Promise<string> {
+    return await this.page.content();
+  }
+
+  /**
+   * Get the HTML content of a specific element
+   */
+  async getElementHTML(selector: string): Promise<string> {
+    const element = this.page.locator(selector);
+    return await element.innerHTML();
+  }
+
+  /**
+   * Get the outer HTML content of a specific element
+   */
+  async getElementOuterHTML(selector: string): Promise<string> {
+    return await this.page.evaluate((sel) => {
+      const element = document.querySelector(sel);
+      return element ? element.outerHTML : '';
+    }, selector);
+  }
+
+  /**
+   * Build a complete DOM tree from the current page
+   */
+  async buildDOMTree(options: {
+    includeHidden?: boolean;
+    includeNonInteractive?: boolean;
+    maxDepth?: number;
+    includeBoundingBox?: boolean;
+    includeXPath?: boolean;
+    filterSelectors?: string[];
+  } = {}): Promise<any> {
+    const {
+      includeHidden = false,
+      includeNonInteractive = true,
+      maxDepth = 5,
+      includeBoundingBox = true,
+      includeXPath = true,
+      filterSelectors = []
+    } = options;
+
+    const script = `
+      (() => {
+        const options = ${JSON.stringify(options)};
+        
+        function isInteractive(element) {
+          const tag = element.tagName.toLowerCase();
+          const role = element.getAttribute('role');
+          const type = element.getAttribute('type');
+          
+          // Interactive tags
+          if (['button', 'a', 'input', 'select', 'textarea', 'label'].includes(tag)) return true;
+          
+          // Interactive roles
+          if (['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio', 'textbox'].includes(role)) return true;
+          
+          // Interactive input types
+          if (type && ['button', 'submit', 'reset', 'checkbox', 'radio', 'text', 'email', 'password', 'search'].includes(type)) return true;
+          
+          // Elements with click handlers
+          if (element.onclick || element.getAttribute('onclick')) return true;
+          
+          // Elements with cursor pointer
+          const style = window.getComputedStyle(element);
+          if (style.cursor === 'pointer') return true;
+          
+          return false;
+        }
+        
+        function isVisible(element) {
+          const style = window.getComputedStyle(element);
+          return style.display !== 'none' && 
+                 style.visibility !== 'hidden' && 
+                 style.opacity !== '0' &&
+                 element.offsetWidth > 0 && 
+                 element.offsetHeight > 0;
+        }
+        
+        function getBoundingBox(element) {
+          const rect = element.getBoundingClientRect();
+          return {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height
+          };
+        }
+        
+        function getXPath(element) {
+          if (element.id) {
+            return '//*[@id="' + element.id + '"]';
+          }
+          
+          if (element === document.body) {
+            return '/html/body';
+          }
+          
+          let path = '';
+          while (element.parentNode) {
+            let siblings = element.parentNode.childNodes;
+            let index = 0;
+            
+            for (let i = 0; i < siblings.length; i++) {
+              let sibling = siblings[i];
+              if (sibling === element) {
+                break;
+              }
+              if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
+                index++;
+              }
+            }
+            
+            let tagName = element.tagName.toLowerCase();
+            let pathIndex = (index > 0 ? '[' + (index + 1) + ']' : '');
+            path = '/' + tagName + pathIndex + path;
+            
+            element = element.parentNode;
+            
+            if (element === document.body) {
+              path = '/html/body' + path;
+              break;
+            }
+          }
+          
+          return path;
+        }
+        
+        function generateSelector(element) {
+          if (element.id) {
+            return '#' + element.id;
+          }
+          
+          let selector = element.tagName.toLowerCase();
+          
+          if (element.className) {
+            const classes = element.className.split(' ').filter(c => c.trim());
+            if (classes.length > 0) {
+              selector += '.' + classes.join('.');
+            }
+          }
+          
+          return selector;
+        }
+        
+        function buildNode(element, depth = 0, parentId = null) {
+          if (depth > options.maxDepth) return null;
+          
+          const nodeId = 'node_' + Math.random().toString(36).substr(2, 9);
+          
+          // Check visibility and interactivity
+          const visible = isVisible(element);
+          const interactive = isInteractive(element);
+          
+          // Skip hidden elements if not included
+          if (!visible && !options.includeHidden) return null;
+          
+          // Skip non-interactive elements if not included
+          if (!interactive && !options.includeNonInteractive) return null;
+          
+          // Apply filter selectors
+          if (options.filterSelectors.length > 0) {
+            const matchesFilter = options.filterSelectors.some(filter => {
+              try {
+                return element.matches(filter);
+              } catch (e) {
+                return false;
+              }
+            });
+            if (!matchesFilter) return null;
+          }
+          
+          const node = {
+            id: nodeId,
+            tagName: element.tagName.toLowerCase(),
+            nodeType: element.nodeType,
+            textContent: element.textContent?.trim() || undefined,
+            attributes: {},
+            children: [],
+            parentId: parentId,
+            isVisible: visible,
+            isInteractive: interactive,
+            selector: generateSelector(element),
+            xpath: options.includeXPath ? getXPath(element) : '',
+            boundingBox: options.includeBoundingBox ? getBoundingBox(element) : undefined
+          };
+          
+          // Extract attributes
+          for (let attr of element.attributes) {
+            node.attributes[attr.name] = attr.value;
+          }
+          
+          // Process children
+          for (let child of element.children) {
+            const childNode = buildNode(child, depth + 1, nodeId);
+            if (childNode) {
+              node.children.push(childNode);
+            }
+          }
+          
+          return node;
+        }
+        
+        const root = buildNode(document.body);
+        const allNodes = [];
+        const interactiveElements = [];
+        const visibleElements = [];
+        
+        function collectNodes(node) {
+          if (!node) return;
+          allNodes.push(node);
+          if (node.isInteractive) interactiveElements.push(node);
+          if (node.isVisible) visibleElements.push(node);
+          node.children.forEach(collectNodes);
+        }
+        
+        collectNodes(root);
+        
+        return {
+          root: root,
+          totalNodes: allNodes.length,
+          interactiveElements: interactiveElements,
+          visibleElements: visibleElements,
+          timestamp: new Date().toISOString(),
+          url: window.location.href,
+          title: document.title
+        };
+      })();
+    `;
+
+    return await this.page.evaluate(script);
+  }
+
+  /**
+   * Get all interactive elements from the page
+   */
+  async getInteractiveElements(): Promise<any[]> {
+    const tree = await this.buildDOMTree({
+      includeHidden: false,
+      includeNonInteractive: false,
+      maxDepth: 3
+    });
+    return tree.interactiveElements;
+  }
+
+  /**
+   * Get all visible elements from the page
+   */
+  async getVisibleElements(): Promise<any[]> {
+    const tree = await this.buildDOMTree({
+      includeHidden: false,
+      includeNonInteractive: true,
+      maxDepth: 3
+    });
+    return tree.visibleElements;
+  }
+
+  /**
+   * Get DOM context for AI decision making
+   */
+  async getDOMContext(): Promise<any> {
+    const tree = await this.buildDOMTree({
+      includeHidden: false,
+      includeNonInteractive: false,
+      maxDepth: 3
+    });
+
+    return {
+      url: tree.url,
+      title: tree.title,
+      interactiveElements: tree.interactiveElements.map((el: any) => ({
+        tagName: el.tagName,
+        textContent: el.textContent,
+        selector: el.selector,
+        isVisible: el.isVisible,
+        attributes: el.attributes
+      })).slice(0, 30), // Limit to first 30 for AI context
+      visibleElements: tree.visibleElements.length,
+      totalNodes: tree.totalNodes,
+      lastUpdated: tree.timestamp
+    };
+  }
+
+  /**
+   * Find elements by text content
+   */
+  async findElementsByText(text: string, exact: boolean = false): Promise<any[]> {
+    const script = `
+      (() => {
+        const searchText = ${JSON.stringify(text)};
+        const exactMatch = ${exact};
+        
+        function findElementsByText(node, results = []) {
+          if (!node) return results;
+          
+          const textContent = node.textContent?.trim() || '';
+          
+          if (exactMatch) {
+            if (textContent === searchText) {
+              results.push({
+                tagName: node.tagName.toLowerCase(),
+                textContent: textContent,
+                selector: node.id ? '#' + node.id : node.tagName.toLowerCase(),
+                isVisible: window.getComputedStyle(node).display !== 'none'
+              });
+            }
+          } else {
+            if (textContent.toLowerCase().includes(searchText.toLowerCase())) {
+              results.push({
+                tagName: node.tagName.toLowerCase(),
+                textContent: textContent,
+                selector: node.id ? '#' + node.id : node.tagName.toLowerCase(),
+                isVisible: window.getComputedStyle(node).display !== 'none'
+              });
+            }
+          }
+          
+          for (let child of node.children) {
+            findElementsByText(child, results);
+          }
+          
+          return results;
+        }
+        
+        return findElementsByText(document.body);
+      })();
+    `;
+
+    return await this.page.evaluate(script);
+  }
+
+  /**
+   * Start DOM change tracking
+   */
+  async startDOMTracking(): Promise<void> {
+    await this.page.evaluate(() => {
+      if ((window as any).__domTrackerObserver) {
+        (window as any).__domTrackerObserver.disconnect();
+      }
+
+      const changes: any[] = [];
+      
+      (window as any).__domTrackerObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          const timestamp = new Date().toISOString();
+          
+          switch (mutation.type) {
+            case 'childList':
+              mutation.addedNodes.forEach((node) => {
+                if (node.nodeType === 1) {
+                  const element = node as Element;
+                  changes.push({
+                    type: 'added',
+                    nodeId: element.id || `node_${Math.random().toString(36).substr(2, 9)}`,
+                    timestamp,
+                    selector: element.id ? '#' + element.id : element.tagName.toLowerCase()
+                  });
+                }
+              });
+              
+              mutation.removedNodes.forEach((node) => {
+                if (node.nodeType === 1) {
+                  const element = node as Element;
+                  changes.push({
+                    type: 'removed',
+                    nodeId: element.id || 'unknown',
+                    timestamp,
+                    selector: element.id ? '#' + element.id : element.tagName.toLowerCase()
+                  });
+                }
+              });
+              break;
+              
+            case 'attributes':
+              const target = mutation.target as Element;
+              
+              changes.push({
+                type: 'attribute-changed',
+                nodeId: target.id || 'unknown',
+                attributeName: mutation.attributeName,
+                oldValue: mutation.oldValue,
+                newValue: target.getAttribute(mutation.attributeName ?? ""),
+                timestamp
+              });
+              break;
+          }
+        }); 
+        
+        (window as any).__domChanges = changes;
+      });
+      
+      (window as any).__domTrackerObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeOldValue: true
+      });
+    });
+  }
+
+  /**
+   * Stop DOM change tracking
+   */
+  async stopDOMTracking(): Promise<void> {
+    await this.page.evaluate(() => {
+      if ((window as any).__domTrackerObserver) {
+        (window as any).__domTrackerObserver.disconnect();
+        (window as any).__domTrackerObserver = null;
+      }
+    });
+  }
+
+  /**
+   * Get accumulated DOM changes
+   */
+  async getDOMChanges(): Promise<any[]> {
+    const changes = await this.page.evaluate(() => {
+      const storedChanges = (window as any).__domChanges || [];
+      (window as any).__domChanges = [];
+      return storedChanges;
+    });
+    
+    return changes;
+  }
+
+  /**
+   * Check if DOM has changed
+   */
+  async hasDOMChanged(): Promise<boolean> {
+    const changes = await this.getDOMChanges();
+    return changes.length > 0;
+  }
 } 

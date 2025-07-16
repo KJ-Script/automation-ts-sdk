@@ -11,4 +11,7 @@ export * from './browser-actions';
 export * from './agent';
 
 // Conversational agent types
-export * from './conversational'; 
+export * from './conversational';
+
+// DOM types
+export * from './dom'; 

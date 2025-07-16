@@ -31,7 +31,15 @@ export {
   
   // Conversational agent types
   ConversationMessage,
-  ConversationContext
+  ConversationContext,
+  
+  // DOM types
+  DOMNode,
+  DOMTree,
+  DOMExtractionOptions,
+  DOMChangeEvent,
+  DOMSnapshot,
+  DOMContext
 } from './types';
 
 // Zod schemas exports (for AI response validation only)

@@ -16,6 +16,7 @@ import {
   CustomActionSchema
 } from '../schemas/agent';
 import { BrowserConfig } from '../types/browser';
+import { DOMContext } from '../types/dom';
 
 export class AIAgent {
   private genAI: GoogleGenerativeAI;
@@ -37,6 +38,8 @@ export class AIAgent {
   private screenshotCounter: number = 0;
   private allScreenshots: string[] = [];
   private tabHistory: Map<number, { url: string; title: string; createdAt: Date }> = new Map();
+  private lastDOMContext: DOMContext | null = null;
+  private domTrackingEnabled: boolean = true;
 
   constructor(config: AgentConfig) {
     this.genAI = new GoogleGenerativeAI(config.apiKey);
@@ -58,6 +61,9 @@ export class AIAgent {
       enableScreenshots: config.enableScreenshots ?? true,
       maxTabs: config.maxTabs || 10
     };
+    
+    // DOM tracking is enabled by default
+    this.domTrackingEnabled = true;
     
     this.model = this.genAI.getGenerativeModel({ model: this.config.model });
     
@@ -206,12 +212,21 @@ export class AIAgent {
     currentPageContext: any, 
     taskHistory: Task[]
   ): Promise<Task> {
+    // Check for DOM changes before planning
+    await this.checkForDOMChanges();
+
     const completedTasks = taskHistory.map(t => `${t.description} (${t.completed ? 'completed' : 'failed'})`).join('\n');
     
     const currentSituation = currentPageContext ? `
 - Current URL: ${currentPageContext.url}
 - Page Title: ${currentPageContext.title}
+- Interactive Elements: ${currentPageContext.domContext?.interactiveElements?.length || 0}
+- Visible Elements: ${currentPageContext.domContext?.visibleElements || 0}
 ` : '- No page loaded yet (need to start)';
+
+    const interactiveElementsList = currentPageContext?.domContext?.interactiveElements?.map((el: any) => 
+      `- ${el.tagName}${el.textContent ? ` (${el.textContent})` : ''} [${el.selector}]`
+    ).join('\n') || '';
 
     const screenshotContext = currentPageContext?.screenshot ? PROMPTS.SCREENSHOT_INTERACTION_CONTEXT : '';
     
@@ -220,7 +235,8 @@ export class AIAgent {
       currentPageContext: currentSituation,
       completedTasks: completedTasks || '- None yet',
       screenshotContext,
-      taskNumber: taskHistory.length + 1
+      taskNumber: taskHistory.length + 1,
+      interactiveElementsList
     });
 
     try {
@@ -233,7 +249,7 @@ export class AIAgent {
       
       const multimodalPrompt = await this.createMultimodalPrompt(textPrompt, screenshots);
       
-      this.log(`Using ${screenshots.length} screenshots for AI decision making`);
+      this.log(`Using ${screenshots.length} screenshots and DOM context for AI decision making`);
       
       const result = await this.model.generateContent(multimodalPrompt);
       const response = result.response.text();
@@ -541,6 +557,13 @@ export class AIAgent {
     if (!this.currentPage) {
       this.currentPage = await this.browser!.newPage();
       this.actions = new BrowserActions(this.currentPage);
+      
+      // Start DOM tracking immediately when page is created
+      if (this.domTrackingEnabled && this.actions) {
+        await this.actions.startDOMTracking();
+        this.log('DOM tracking started');
+      }
+      
       // Track the initial tab
       this.trackTab(0, await this.currentPage.url(), await this.currentPage.title());
     }
@@ -704,22 +727,83 @@ export class AIAgent {
   private async getPageContext(): Promise<any> {
     const page = await this.getCurrentPage();
     
-    return {
+    const basicContext = {
       url: await page.url(),
       title: await page.title()
     };
+
+    // Always include DOM context for better AI decisions
+    if (this.actions) {
+      try {
+        // Wait for page to load completely before extracting DOM
+        await this.waitForPageLoad();
+        
+        const domContext = await this.actions.getDOMContext();
+        this.lastDOMContext = domContext;
+        
+        return {
+          ...basicContext,
+          domContext: {
+            interactiveElements: domContext.interactiveElements,
+            visibleElements: domContext.visibleElements,
+            totalNodes: domContext.totalNodes,
+            lastUpdated: domContext.lastUpdated
+          }
+        };
+      } catch (error) {
+        this.log(`Failed to get DOM context: ${error}`);
+        return basicContext;
+      }
+    }
+
+    return basicContext;
+  }
+
+  /**
+   * Wait for page to load completely (either network idle or timeout)
+   */
+  private async waitForPageLoad(timeout: number = 10000): Promise<void> {
+    if (!this.actions) return;
+
+    try {
+      this.log('Waiting for page to load completely...');
+      
+      // Wait for network to be idle (no requests for 500ms)
+      await this.actions.waitForLoad(5000);
+      
+      // Additional wait for any dynamic content
+      await this.actions.wait(1000);
+      
+      this.log('Page load completed');
+    } catch (error) {
+      this.log(`Page load wait timed out or failed: ${error}`);
+      // Continue anyway, DOM extraction will still work
+    }
   }
 
   private async getPageContextWithScreenshots(): Promise<any> {
     const page = await this.getCurrentPage();
     
     const screenshot = await this.takeScreenshot('current-context');
+    const domContext = await this.getPageContext();
     
     return {
-      url: await page.url(),
-      title: await page.title(),
+      ...domContext,
       screenshots: screenshot ? [screenshot] : []
     };
+  }
+
+  private async checkForDOMChanges(): Promise<boolean> {
+    if (!this.actions) return false;
+
+    const hasChanged = await this.actions.hasDOMChanged();
+    if (hasChanged) {
+      this.log('DOM changes detected, updating context');
+      // Update DOM context when changes are detected
+      await this.getPageContext();
+    }
+
+    return hasChanged;
   }
 
   private async analyzeFinalResults(instruction: string, tasks: Task[], results: any[]): Promise<any> {
@@ -744,6 +828,11 @@ export class AIAgent {
   }
 
   async cleanup(): Promise<void> {
+    if (this.actions && this.domTrackingEnabled) {
+      await this.actions.stopDOMTracking();
+      this.log('DOM tracking stopped');
+    }
+    
     if (this.browser) {
       await this.browser.close();
       this.log('Browser closed');
