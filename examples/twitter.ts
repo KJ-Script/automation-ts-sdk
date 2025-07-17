@@ -4,7 +4,7 @@ const user = 'ketiyohannes';
 const password = 'theHolyBible@Heaven';
 
 const agent = new AIAgent({
-  apiKey: process.env.GOOGLE_API_KEY || 'AIzaSyBaQJO-gmZOeAvSRXFvcx3rr8eBuQT1458',
+  apiKey: process.env.GOOGLE_API_KEY,
   model: 'gemini-2.5-flash',
   browserConfig: {
     type: 'chrome',
