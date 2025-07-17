@@ -2,31 +2,44 @@
   "name": "automation-ts-sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for automation",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
-    "test:dom": "ts-node examples/test-dom.ts",
-    "test:actions": "ts-node examples/test-actions.ts",
-    "demo": "ts-node examples/demo-actions.ts",
-    "reddit": "ts-node examples/reddit-signin.ts",
-    "extract": "ts-node examples/data-extraction.ts",
-    "log-json": "ts-node examples/simple-json-logging.ts"
+    "test:dom": "tsx examples/test-dom.ts",
+    "test:actions": "tsx examples/test-actions.ts",
+    "demo": "tsx examples/demo-actions.ts",
+    "reddit": "tsx examples/reddit-signin.ts",
+    "extract": "tsx examples/data-extraction.ts",
+    "log-json": "tsx examples/simple-json-logging.ts",
+    "twitter": "tsx examples/twitter.ts",
+    "demo-advanced": "tsx examples/advanced-actions-demo.ts",
+    "demo-ai-advanced": "tsx examples/ai-agent-advanced-demo.ts"
   },
-  "keywords": ["typescript", "sdk", "automation"],
+  "keywords": [
+    "typescript",
+    "sdk",
+    "automation"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@google/genai": "^1.9.0",
+    "@google/generative-ai": "^0.24.1",
+    "@types/jsdom": "^21.1.7",
+    "jsdom": "^26.1.0",
     "playwright": "^1.40.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
-    "ts-node": "^10.9.0"
+    "ts-node": "^10.9.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.0.0"
   },
   "files": [
     "dist"
   ]
-} 
+}
