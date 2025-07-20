@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AutomationBrowser } from '../browser/browser';
 import { BrowserActions } from '../browser/actions/actions';
-import { parseHTMLToSummary } from '../dom/htmlParser';
+import { extractDOMTree, extractDOMSummary, xpathToCSSSelector, generateCSSSelector, findElementByXPath, findElementBySelector } from '../dom/domExtractor';
 import { taskPlanningPrompt } from './prompts/taskPlanningPrompt';
 import { goalAchievementPrompt } from './prompts/goalAchievementPrompt';
 import { customTaskPrompt } from './prompts/customTaskPrompt';
@@ -38,6 +38,13 @@ export class AIAgent {
   private taskHistory: Task[] = [];
   private screenshotCounter: number = 0;
   private allScreenshots: string[] = [];
+  
+  // Rate limiting and retry management
+  private lastApiCall: number = 0;
+  private apiCallCount: number = 0;
+  private rateLimitWindow: number = 60000; // 1 minute window
+  private maxCallsPerMinute: number = 50; // Conservative limit
+  private retryDelays: number[] = [1000, 2000, 5000, 10000, 30000]; // Exponential backoff
 
   constructor(config: AgentConfig) {
     this.genAI = new GoogleGenerativeAI(config.apiKey);
@@ -203,7 +210,10 @@ Current Page Context:
     const taskPrompt = taskPlanningPrompt(originalInstruction, contextPrompt, taskHistory);
 
     try {
-      const result = await this.model.generateContent(taskPrompt);
+      const result = await this.makeApiCall(
+        () => this.model.generateContent(taskPrompt),
+        'task planning'
+      ) as any;
       const response = result.response.text();
       const taskJson = response.trim().replace(/```json\n?|\n?```/g, '');
       const taskData = JSON.parse(taskJson);
@@ -265,7 +275,10 @@ Current Page Context:
     const goalPrompt = goalAchievementPrompt(originalInstruction, contextPrompt, completedTasks, failedTasks);
 
     try {
-      const result = await this.model.generateContent(goalPrompt);
+      const result = await this.makeApiCall(
+        () => this.model.generateContent(goalPrompt),
+        'goal achievement check'
+      ) as any;
       const response = result.response.text();
       const goalJson = response.trim().replace(/```json\n?|\n?```/g, '');
       const goalData = JSON.parse(goalJson);
@@ -297,11 +310,19 @@ Current Page Context:
             result = { error: 'Missing or invalid selector for click action' };
             break;
           }
-          this.log(`🖱️ Clicking ${task.selector}`);
+          
+          // Convert XPath to CSS selector if needed
+          let cssSelector = task.selector;
+          if (task.selector.startsWith('/')) {
+            cssSelector = this.convertXPathToSelector(task.selector);
+            this.log(`🔄 Converted XPath to CSS selector: ${task.selector} → ${cssSelector}`);
+          }
+          
+          this.log(`🖱️ Clicking ${cssSelector}`);
           const actions1 = await this.getActions();
-          await actions1.click(task.selector);
+          await actions1.click(cssSelector);
           await actions1.wait(this.config.performance.clickWaitTime!);
-          result = { action: 'click', selector: task.selector };
+          result = { action: 'click', selector: cssSelector, originalSelector: task.selector };
           break;
           
         case 'clickByText':
@@ -328,11 +349,19 @@ Current Page Context:
             result = { error: 'Missing or invalid text for type action' };
             break;
           }
-          this.log(`⌨️ Typing "${task.text}" into ${task.selector}`);
+          
+          // Convert XPath to CSS selector if needed
+          let typeCssSelector = task.selector;
+          if (task.selector.startsWith('/')) {
+            typeCssSelector = this.convertXPathToSelector(task.selector);
+            this.log(`🔄 Converted XPath to CSS selector: ${task.selector} → ${typeCssSelector}`);
+          }
+          
+          this.log(`⌨️ Typing "${task.text}" into ${typeCssSelector}`);
           const actions3 = await this.getActions();
-          await actions3.type(task.selector, task.text, { clear: true });
+          await actions3.type(typeCssSelector, task.text, { clear: true });
           await actions3.wait(this.config.performance.typeWaitTime!);
-          result = { action: 'type', selector: task.selector, text: task.text };
+          result = { action: 'type', selector: typeCssSelector, text: task.text, originalSelector: task.selector };
           break;
           
         case 'navigate':
@@ -375,6 +404,100 @@ Current Page Context:
   }
 
   /**
+   * Rate limiting and retry management for API calls
+   */
+  private async enforceRateLimit(): Promise<void> {
+    const now = Date.now();
+    
+    // Reset counter if window has passed
+    if (now - this.lastApiCall > this.rateLimitWindow) {
+      this.apiCallCount = 0;
+      this.lastApiCall = now;
+    }
+    
+    // Check if we're at the limit
+    if (this.apiCallCount >= this.maxCallsPerMinute) {
+      const waitTime = this.rateLimitWindow - (now - this.lastApiCall);
+      this.log(`⏳ Rate limit reached. Waiting ${Math.ceil(waitTime / 1000)} seconds...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      this.apiCallCount = 0;
+      this.lastApiCall = Date.now();
+    }
+    
+    this.apiCallCount++;
+  }
+
+  /**
+   * Make API call with retry logic and rate limiting
+   */
+  private async makeApiCall<T>(apiCall: () => Promise<T>, context: string): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        // Enforce rate limiting
+        await this.enforceRateLimit();
+        
+        // Make the API call
+        const result = await apiCall();
+        this.log(`✅ API call successful (${context})`);
+        return result;
+        
+      } catch (error) {
+        lastError = error as Error;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Check if it's a rate limit error (more specific detection)
+        if (errorMessage.includes('429') || 
+            (errorMessage.includes('quota') && errorMessage.includes('exceeded')) ||
+            (errorMessage.includes('rate') && errorMessage.includes('limit'))) {
+          const retryDelay = this.retryDelays[Math.min(attempt, this.retryDelays.length - 1)];
+          this.log(`⏳ Rate limit hit (${context}). Retrying in ${retryDelay / 1000}s... (Attempt ${attempt + 1}/${this.config.maxRetries + 1})`);
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          
+          // Increase the rate limit window temporarily
+          this.maxCallsPerMinute = Math.max(10, this.maxCallsPerMinute - 10);
+          continue;
+        }
+        
+        // For other errors, use shorter retry delays
+        if (attempt < this.config.maxRetries) {
+          const retryDelay = Math.min(1000 * Math.pow(2, attempt), 5000);
+          this.log(`❌ API call failed (${context}): ${errorMessage}. Retrying in ${retryDelay / 1000}s... (Attempt ${attempt + 1}/${this.config.maxRetries + 1})`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        }
+        
+        // Final attempt failed
+        this.log(`❌ API call failed after ${this.config.maxRetries + 1} attempts (${context}): ${errorMessage}`);
+        throw error;
+      }
+    }
+    
+    throw lastError || new Error(`API call failed after ${this.config.maxRetries + 1} attempts`);
+  }
+
+  /**
+   * Convert XPath to CSS selector for element interaction
+   */
+  private convertXPathToSelector(xpath: string): string {
+    return xpathToCSSSelector(xpath);
+  }
+
+  /**
+   * Find element in DOM tree and get its CSS selector
+   */
+  private findElementSelector(domTree: any, xpath: string): string | null {
+    const element = findElementByXPath(domTree, xpath);
+    if (element) {
+      return generateCSSSelector(element);
+    }
+    return null;
+  }
+
+  /**
    * Handle custom tasks that require AI decision making
    */
   private async handleCustomTask(task: Task): Promise<any> {
@@ -392,7 +515,10 @@ Current Page Context:
       
       this.log(`📸 Using ${screenshots.length} screenshot for custom task decision`);
       
-      const result = await this.model.generateContent(multimodalPrompt);
+      const result = await this.makeApiCall(
+        () => this.model.generateContent(multimodalPrompt),
+        'custom task decision'
+      ) as any;
       const response = result.response.text();
       const actionJson = response.trim().replace(/```json\n?|\n?```/g, '');
       const action = JSON.parse(actionJson);
@@ -402,11 +528,18 @@ Current Page Context:
       // Execute the AI's decision
       switch (action.action) {
         case 'click':
-          this.log(`🖱️ Custom action: Clicking ${action.selector}`);
+          // Convert XPath to CSS selector if needed
+          let customClickSelector = action.selector;
+          if (action.selector.startsWith('/')) {
+            customClickSelector = this.convertXPathToSelector(action.selector);
+            this.log(`🔄 Custom action: Converted XPath to CSS selector: ${action.selector} → ${customClickSelector}`);
+          }
+          
+          this.log(`🖱️ Custom action: Clicking ${customClickSelector}`);
           const actions1 = await this.getActions();
-          await actions1.click(action.selector);
+          await actions1.click(customClickSelector);
           await actions1.wait(this.config.performance.clickWaitTime!);
-          return { action: 'click', selector: action.selector };
+          return { action: 'click', selector: customClickSelector, originalSelector: action.selector };
 
         case 'clickByText':
           this.log(`🖱️ Custom action: Clicking by text "${action.clickText}"`);
@@ -416,11 +549,18 @@ Current Page Context:
           return { action: 'clickByText', clickText: action.clickText };
 
         case 'type':
-          this.log(`⌨️ Custom action: Typing "${action.text}" into ${action.selector}`);
+          // Convert XPath to CSS selector if needed
+          let customTypeSelector = action.selector;
+          if (action.selector.startsWith('/')) {
+            customTypeSelector = this.convertXPathToSelector(action.selector);
+            this.log(`🔄 Custom action: Converted XPath to CSS selector: ${action.selector} → ${customTypeSelector}`);
+          }
+          
+          this.log(`⌨️ Custom action: Typing "${action.text}" into ${customTypeSelector}`);
           const actions3 = await this.getActions();
-          await actions3.type(action.selector, action.text, { clear: true });
+          await actions3.type(customTypeSelector, action.text, { clear: true });
           await actions3.wait(this.config.performance.typeWaitTime!);
-          return { action: 'type', selector: action.selector, text: action.text };
+          return { action: 'type', selector: customTypeSelector, text: action.text, originalSelector: action.selector };
 
         case 'navigate':
           this.log(`🌐 Custom action: Navigating to ${action.url}`);
@@ -453,33 +593,64 @@ Current Page Context:
   private async analyzeCurrentPageState(context: string): Promise<any> {
     this.log(`🔍 Analyzing current page state: ${context}`);
     
-    // Extract complete DOM structure first
-    const page = await this.getCurrentPage();
-    const html = await page.content();
-    const domSummary = parseHTMLToSummary(html);
-    const extractedData = {}; // DataExtractor is no longer used
-    
-    // Take screenshot AFTER DOM extraction (performance configurable)
-    const screenshot = this.shouldTakeScreenshot('after_dom') ? 
-      await this.takeScreenshot(`after-${context}`) : null;
-    
-    const pageContext = {
-      url: await page.url(),
-      title: await page.title(),
-      extractedData,
-      domSummary,
-      analysisContext: context,
-      screenshot: screenshot
-    };
+    try {
+      // Extract complete DOM structure using the injected script
+      const page = await this.getCurrentPage();
+      const domTree = await extractDOMTree(page);
+      const domSummary = extractDOMSummary(domTree);
+      const extractedData = {}; // DataExtractor is no longer used
+      
+      // Take screenshot AFTER DOM extraction (performance configurable)
+      const screenshot = this.shouldTakeScreenshot('after_dom') ? 
+        await this.takeScreenshot(`after-${context}`) : null;
+      
+      const pageContext = {
+        url: await page.url(),
+        title: await page.title(),
+        extractedData,
+        domSummary,
+        domTree,
+        analysisContext: context,
+        screenshot: screenshot
+      };
 
-    this.log(`📊 [${context.toUpperCase()}] DOM Analysis Results:`);
-    this.log(`   📍 URL: ${pageContext.url}`);
-    this.log(`   📝 Title: ${pageContext.title}`);
-    this.log(`   🏗️ Elements found: ${domSummary.split('\n').length}`);
-    this.log(`   📸 Screenshot: ${screenshot ? '✅ Taken' : '❌ Skipped'}`);
-    this.log(`   ✅ DOM state captured for AI decision making`);
+      this.log(`📊 [${context.toUpperCase()}] DOM Analysis Results:`);
+      this.log(`   📍 URL: ${pageContext.url}`);
+      this.log(`   📝 Title: ${pageContext.title}`);
+      this.log(`   🏗️ Elements found: ${domSummary.split('\n').length}`);
+      this.log(`   📸 Screenshot: ${screenshot ? '✅ Taken' : '❌ Skipped'}`);
+      this.log(`   ✅ DOM state captured for AI decision making`);
 
-    return pageContext;
+      return pageContext;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.log(`❌ DOM Analysis failed: ${errorMessage}`);
+      
+      // Return a fallback page context without DOM data
+      const page = await this.getCurrentPage();
+      const screenshot = this.shouldTakeScreenshot('after_dom') ? 
+        await this.takeScreenshot(`after-${context}`) : null;
+      
+      const pageContext = {
+        url: await page.url(),
+        title: await page.title(),
+        extractedData: {},
+        domSummary: 'DOM extraction failed - using fallback',
+        domTree: null,
+        analysisContext: context,
+        screenshot: screenshot,
+        domExtractionError: errorMessage
+      };
+
+      this.log(`📊 [${context.toUpperCase()}] Fallback Analysis Results:`);
+      this.log(`   📍 URL: ${pageContext.url}`);
+      this.log(`   📝 Title: ${pageContext.title}`);
+      this.log(`   🏗️ Elements found: N/A (DOM extraction failed)`);
+      this.log(`   📸 Screenshot: ${screenshot ? '✅ Taken' : '❌ Skipped'}`);
+      this.log(`   ⚠️ Using fallback page context`);
+
+      return pageContext;
+    }
   }
 
   /**
@@ -687,14 +858,29 @@ Current Page Context:
    */
   private async getPageContext(): Promise<any> {
     const page = await this.getCurrentPage();
-    const html = await page.content();
-    const domSummary = parseHTMLToSummary(html);
     
-    return {
-      url: await page.url(),
-      title: await page.title(),
-      domSummary
-    };
+    try {
+      const domTree = await extractDOMTree(page);
+      const domSummary = extractDOMSummary(domTree);
+      
+      return {
+        url: await page.url(),
+        title: await page.title(),
+        domSummary,
+        domTree
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.log(`❌ DOM extraction failed in getPageContext: ${errorMessage}`);
+      
+      return {
+        url: await page.url(),
+        title: await page.title(),
+        domSummary: 'DOM extraction failed - using fallback',
+        domTree: null,
+        domExtractionError: errorMessage
+      };
+    }
   }
 
   /**
@@ -702,18 +888,37 @@ Current Page Context:
    */
   private async getPageContextWithScreenshots(): Promise<any> {
     const page = await this.getCurrentPage();
-    const html = await page.content();
-    const domSummary = parseHTMLToSummary(html);
     
-    // Take a screenshot for immediate analysis
-    const screenshot = await this.takeScreenshot('current-context');
-    
-    return {
-      url: await page.url(),
-      title: await page.title(),
-      domSummary,
-      screenshot: screenshot
-    };
+    try {
+      const domTree = await extractDOMTree(page);
+      const domSummary = extractDOMSummary(domTree);
+      
+      // Take a screenshot for immediate analysis
+      const screenshot = await this.takeScreenshot('current-context');
+      
+      return {
+        url: await page.url(),
+        title: await page.title(),
+        domSummary,
+        domTree,
+        screenshot: screenshot
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.log(`❌ DOM extraction failed in getPageContextWithScreenshots: ${errorMessage}`);
+      
+      // Take a screenshot for immediate analysis
+      const screenshot = await this.takeScreenshot('current-context');
+      
+      return {
+        url: await page.url(),
+        title: await page.title(),
+        domSummary: 'DOM extraction failed - using fallback',
+        domTree: null,
+        screenshot: screenshot,
+        domExtractionError: errorMessage
+      };
+    }
   }
 
   /**
@@ -724,6 +929,30 @@ Current Page Context:
       await this.browser.close();
       this.log('✅ Browser closed');
     }
+  }
+
+  /**
+   * Get rate limit status
+   */
+  getRateLimitStatus(): { callsThisMinute: number; maxCallsPerMinute: number; timeUntilReset: number } {
+    const now = Date.now();
+    const timeSinceLastCall = now - this.lastApiCall;
+    const timeUntilReset = Math.max(0, this.rateLimitWindow - timeSinceLastCall);
+    
+    return {
+      callsThisMinute: this.apiCallCount,
+      maxCallsPerMinute: this.maxCallsPerMinute,
+      timeUntilReset: Math.ceil(timeUntilReset / 1000)
+    };
+  }
+
+  /**
+   * Reset rate limit counter (useful for testing)
+   */
+  resetRateLimit(): void {
+    this.apiCallCount = 0;
+    this.lastApiCall = 0;
+    this.maxCallsPerMinute = 50; // Reset to default
   }
 
   /**

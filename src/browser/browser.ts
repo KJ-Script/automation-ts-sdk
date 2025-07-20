@@ -11,7 +11,7 @@ export class AutomationBrowser {
       headless: false,
       viewport: { width: 1280, height: 720 },
       timeout: 30000,
-      slowMo: 1000,
+      slowMo: 10,
       ...config
     };
   }
